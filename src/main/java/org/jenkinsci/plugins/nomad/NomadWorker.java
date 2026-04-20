@@ -33,7 +33,11 @@ public class NomadWorker extends AbstractCloudSlave implements EphemeralNode {
         setLabelString(labelString);
         setMode(labelString.isEmpty() ? Mode.NORMAL : Mode.EXCLUSIVE);
         setNumExecutors(numExecutors);
-        setRetentionStrategy(new NomadRetentionStrategy(idleTerminationInMinutes));
+        if (reusable) {
+            setRetentionStrategy(new NomadRetentionStrategy(idleTerminationInMinutes));
+        } else {
+            setRetentionStrategy(new NomadOnceRetentionStrategy(idleTerminationInMinutes));
+        }
 
         this.cloudName = cloudName;
         this.reusable = reusable;
