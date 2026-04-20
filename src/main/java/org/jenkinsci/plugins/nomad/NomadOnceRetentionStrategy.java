@@ -1,6 +1,7 @@
 package org.jenkinsci.plugins.nomad;
 
 import hudson.slaves.AbstractCloudComputer;
+import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.CloudRetentionStrategy;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -18,8 +19,9 @@ public class NomadOnceRetentionStrategy extends CloudRetentionStrategy {
         if (c.isIdle() && !c.getBuilds().isEmpty()) {
             LOGGER.log(Level.INFO, "Single-use Nomad node {0} finished its build. Terminating immediately.", c.getName());
             try {
-                if (c.getNode() != null) {
-                    c.getNode().terminate();
+                AbstractCloudSlave node = (AbstractCloudSlave) c.getNode();
+                if (node != null) {
+                    node.terminate();
                 }
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Failed to terminate Nomad node", e);
