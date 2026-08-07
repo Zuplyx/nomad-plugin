@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
-import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.nomad.Api.Artifact;
 import org.jenkinsci.plugins.nomad.Api.Constraint;
 import org.jenkinsci.plugins.nomad.Api.ConstraintGroup;
@@ -66,7 +65,7 @@ public class MigrationHelper {
     private static void migrateWorkerUrl(NomadCloud cloud) {
         String workerUrl = getFieldValue(cloud, "workerUrl");
 
-        if (StringUtils.isEmpty(workerUrl)) {
+        if (Util.fixEmpty(workerUrl) == null) {
             String jenkinsUrl = getFieldValue(cloud, "jenkinsUrl");
             migrateField(cloud, "workerUrl", Util.ensureEndsWith(jenkinsUrl, "/") + "jnlpJars/slave.jar");
         }
@@ -75,7 +74,7 @@ public class MigrationHelper {
     private static void migrateJenkinsUrl(NomadCloud cloud) {
         String jenkinsUrl = getFieldValue(cloud, "jenkinsUrl");
 
-        if (StringUtils.isEmpty(jenkinsUrl)) {
+        if (Util.fixEmpty(jenkinsUrl) == null) {
             migrateField(cloud, "jenkinsUrl", Jenkins.get().getRootUrl());
         }
     }
@@ -94,14 +93,14 @@ public class MigrationHelper {
     private static void migrateDriver(NomadWorkerTemplate template) {
         String driver = getFieldValue(template, "driver");
 
-        if (StringUtils.isEmpty(driver)) {
+        if (Util.fixEmpty(driver) == null) {
             Boolean useRawExec = getFieldValue(template, "useRawExec");
 
             if (Boolean.TRUE.equals(useRawExec)) {
                 driver  = "raw_exec";
             } else {
                 String image = getFieldValue(template, "image");
-                driver = StringUtils.isEmpty(image) ? "java" : "docker";
+                driver = Util.fixEmpty(image) == null ? "java" : "docker";
             }
 
             migrateField(template, "driver", driver);
@@ -111,7 +110,7 @@ public class MigrationHelper {
     private static void migrateJobTemplate(NomadWorkerTemplate template, String jenkinsUrl, String jenkinsTunnel, String workerUrl) {
         String jobTemplate = getFieldValue(template, "jobTemplate");
 
-        if (StringUtils.isEmpty(jobTemplate)) {
+        if (Util.fixEmpty(jobTemplate) == null) {
             jobTemplate = buildWorkerJob("%WORKER_NAME%", "%WORKER_SECRET%", jenkinsUrl, jenkinsTunnel, workerUrl, template);
 
             migrateField(template, "jobTemplate", jobTemplate);
@@ -277,7 +276,7 @@ public class MigrationHelper {
                 driverConfig.put("command", "/bin/bash");
                 String argString =
                         prefixCmd + "; java -cp /local/slave.jar hudson.remoting.jnlp.Main -headless ";
-                argString += StringUtils.join(args, " ");
+                argString += String.join(" ", args);
                 args.clear();
                 args.add("-c");
                 args.add(argString);
@@ -291,7 +290,7 @@ public class MigrationHelper {
 
             String hostVolumes = getFieldValue(template, "hostVolumes");
             if (hostVolumes != null && !hostVolumes.isEmpty()) {
-                driverConfig.put("volumes", StringUtils.split(hostVolumes, ","));
+                driverConfig.put("volumes", splitDiscardingEmpty(hostVolumes, ","));
             }
 
             driverConfig.put("args", args);
@@ -301,27 +300,27 @@ public class MigrationHelper {
 
             String extraHosts = getFieldValue(template, "extraHosts");
             if (extraHosts != null && !extraHosts.isEmpty()) {
-                driverConfig.put("extra_hosts", StringUtils.split(extraHosts, ", "));
+                driverConfig.put("extra_hosts", splitDiscardingEmpty(extraHosts, ", "));
             }
 
             String dnsServers = getFieldValue(template, "dnsServers");
             if (dnsServers != null && !dnsServers.isEmpty()) {
-                driverConfig.put("dns_servers", StringUtils.split(dnsServers, ", "));
+                driverConfig.put("dns_servers", splitDiscardingEmpty(dnsServers, ", "));
             }
 
             String securityOpt = getFieldValue(template, "securityOpt");
             if (securityOpt != null && !securityOpt.isEmpty()) {
-                driverConfig.put("security_opt", StringUtils.split(securityOpt, ", "));
+                driverConfig.put("security_opt", splitDiscardingEmpty(securityOpt, ", "));
             }
 
             String capAdd = getFieldValue(template, "capAdd");
             if (capAdd != null && !capAdd.isEmpty()) {
-                driverConfig.put("cap_add", StringUtils.split(capAdd, ", "));
+                driverConfig.put("cap_add", splitDiscardingEmpty(capAdd, ", "));
             }
 
             String capDrop = getFieldValue(template, "capDrop");
             if (capDrop != null && !capDrop.isEmpty()) {
-                driverConfig.put("cap_drop", StringUtils.split(capDrop, ", "));
+                driverConfig.put("cap_drop", splitDiscardingEmpty(capDrop, ", "));
             }
         }
 
@@ -346,6 +345,22 @@ public class MigrationHelper {
         } catch (IllegalAccessException | NoSuchFieldException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * Splits on any of the characters in {@code separatorChars}, discarding empty tokens -- matching
+     * Commons Lang's {@code StringUtils.split}, which differs from {@code String.split}.
+     */
+    private static String[] splitDiscardingEmpty(String value, String separatorChars) {
+        if (value == null) {
+            return null;
+        }
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        java.util.StringTokenizer tokenizer = new java.util.StringTokenizer(value, separatorChars);
+        while (tokenizer.hasMoreTokens()) {
+            parts.add(tokenizer.nextToken());
+        }
+        return parts.toArray(new String[0]);
     }
 
 }

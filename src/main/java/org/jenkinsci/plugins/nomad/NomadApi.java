@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
-import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -29,6 +28,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import hudson.Util;
 
 /**
  * Provides access to Nomad by using the Nomad REST API.
@@ -61,7 +61,7 @@ public final class NomadApi {
                 if (body != null) {
                     message = body.string();
                 }
-                return FormValidation.error(StringUtils.isEmpty(message) ? response.toString() : message);
+                return FormValidation.error(Util.fixEmpty(message) == null ? response.toString() : message);
             }
         } catch (Exception e) {
             return FormValidation.error(e.getMessage());
@@ -334,7 +334,7 @@ public final class NomadApi {
         }
         builder.url(httpBuilder.build());
         String nomadToken = cloud.getNomadACL();
-        if (StringUtils.isNotEmpty(nomadToken)) {
+        if (Util.fixEmpty(nomadToken) != null) {
             builder = builder.addHeader("X-Nomad-Token", nomadToken);
         }
 

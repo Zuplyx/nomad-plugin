@@ -1,7 +1,7 @@
 package org.jenkinsci.plugins.nomad;
 
-import static org.apache.commons.lang.StringUtils.trimToEmpty;
 
+import hudson.Util;
 import static com.cloudbees.plugins.credentials.CredentialsMatchers.filter;
 import static com.cloudbees.plugins.credentials.CredentialsMatchers.withId;
 import static com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentials;
@@ -110,7 +110,7 @@ public class NomadCloud extends AbstractCloudImpl {
                         Jenkins.get(),
                         ACL.SYSTEM,
                         Collections.emptyList()),
-                withId(trimToEmpty(credentialsId))
+                withId(Util.fixNull(credentialsId).trim())
         );
         if (creds.size() > 0) {
             return creds.get(0).getSecret().getPlainText();
