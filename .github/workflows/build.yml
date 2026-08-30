@@ -1,0 +1,48 @@
+# Fork CI. The Jenkinsfile is kept for ci.jenkins.io in case this work is ever
+# contributed upstream; this workflow covers the fork and runs the same command.
+#
+# Actions are pinned to a full commit SHA with the release tag in a trailing comment.
+# A tag is a mutable pointer, so pinning by tag would let a compromised or moved tag
+# run different code; a SHA cannot be repointed. Dependabot understands this form and
+# updates the SHA and the comment together.
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+      - integration
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: JDK ${{ matrix.jdk }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: [17, 21]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B -ntp clean verify
+
+      - name: Upload plugin
+        if: matrix.jdk == 21
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nomad-hpi
+          path: target/*.hpi
+          if-no-files-found: error

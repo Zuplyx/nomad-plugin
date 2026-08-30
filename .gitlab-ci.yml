@@ -1,0 +1,31 @@
+# Fork CI for GitLab. Mirrors .github/workflows/build.yml; keep the two in step.
+# The Jenkinsfile is kept for ci.jenkins.io in case this work is contributed upstream.
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "-B -ntp"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository
+
+stages:
+  - build
+
+.build: &build
+  stage: build
+  script:
+    - mvn $MAVEN_CLI_OPTS clean verify
+
+build:jdk17:
+  <<: *build
+  image: maven:3.9-eclipse-temurin-17
+
+build:jdk21:
+  <<: *build
+  image: maven:3.9-eclipse-temurin-21
+  artifacts:
+    paths:
+      - target/*.hpi
+    expire_in: 1 week
