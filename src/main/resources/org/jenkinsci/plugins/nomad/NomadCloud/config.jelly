@@ -10,6 +10,10 @@
     <f:checkbox default="false" value="${instance.getPrune()}" />
   </f:entry>
 
+  <f:entry title="Check Nomad Capacity Before Provisioning" field="checkCapacityBeforeProvisioning">
+    <f:checkbox default="false" />
+  </f:entry>
+
   <f:block>
     <f:entry title="Nomad URL" field="nomadUrl" description="Nomad API URL [hostname:port]">
       <f:textbox default="http://127.0.0.1:4646"/>

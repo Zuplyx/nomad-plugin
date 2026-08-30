@@ -92,8 +92,15 @@ public final class NomadApi {
     }
     
     /**
-     * Verify Nomad allocation availability for a template
-     * @return true if the plan confirm that nomad is able to allocate the job
+     * Asks Nomad whether it could currently place a job built from this template, via a dry-run plan.
+     * <p>
+     * Deliberately <em>fails open</em>: if the answer cannot be determined -- the request fails, the ACL
+     * token lacks permission, the response is unreadable -- this returns true so that provisioning
+     * continues. Halting provisioning because a diagnostic call failed would turn a transient API
+     * problem into a total outage.
+     *
+     * @param template template to plan
+     * @return false only when Nomad explicitly reports it could not place the job
      */
     public boolean checkAllocAvailability(NomadWorkerTemplate template) {
         String id = UUID.randomUUID().toString();
@@ -104,18 +111,29 @@ public final class NomadApi {
 
         try (Response response = executeRequest(request)) {
             if (!response.isSuccessful()) {
-                return false;
+                LOGGER.log(Level.WARNING, "Capacity pre-check returned " + response.code()
+                        + "; assuming capacity is available and continuing to provision.");
+                return true;
             }
-            try (ResponseBody body = response.body()) {
-            	JSONObject bodyJson = new JSONObject(body.string());
-            	if (bodyJson.has("FailedTGAllocs") && bodyJson.isNull("FailedTGAllocs")) {
-            		return true;
-            	}
+            ResponseBody body = response.body();
+            if (body == null) {
+                LOGGER.log(Level.WARNING, "Capacity pre-check returned an empty body; "
+                        + "assuming capacity is available and continuing to provision.");
+                return true;
             }
-        } catch (IOException e) {
+            JSONObject bodyJson = new JSONObject(body.string());
+            // FailedTGAllocs is null when every task group could be placed.
+            if (!bodyJson.has("FailedTGAllocs") || bodyJson.isNull("FailedTGAllocs")) {
+                return true;
+            }
+            LOGGER.log(Level.INFO, "Nomad cannot place another job for this template: "
+                    + bodyJson.get("FailedTGAllocs"));
             return false;
+        } catch (IOException | JSONException e) {
+            LOGGER.log(Level.WARNING, "Capacity pre-check failed (" + e.getMessage()
+                    + "); assuming capacity is available and continuing to provision.");
+            return true;
         }
-        return false;
     }
 
     /**

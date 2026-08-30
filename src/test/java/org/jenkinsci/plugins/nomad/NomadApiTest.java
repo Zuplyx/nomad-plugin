@@ -13,6 +13,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.serverError;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -170,6 +171,50 @@ public class NomadApiTest {
 
         // THEN
         verify(deleteRequestedFor(urlEqualTo("/v1/job/" + workerName + "?namespace=ns1")));
+    }
+
+    /**
+     * The capacity pre-check must fail OPEN. Halting provisioning because a diagnostic call failed
+     * would turn a transient API problem, or an ACL token lacking plan permission, into a total
+     * outage. See issue #185.
+     */
+    @Test
+    public void testCheckAllocAvailabilityFailsOpenOnServerError() {
+        // GIVEN
+        stubFor(post(urlMatching("/v1/job/([a-f0-9-]*)/plan"))
+                .willReturn(serverError()));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+        when(template.getJobTemplate()).thenReturn("{}");
+        when(template.getRemoteFs()).thenReturn("");
+
+        // WHEN / THEN - provisioning continues
+        assertThat(api.checkAllocAvailability(template), is(true));
+    }
+
+    @Test
+    public void testCheckAllocAvailabilityWhenNomadHasCapacity() {
+        // GIVEN - FailedTGAllocs is null when every task group could be placed
+        stubFor(post(urlMatching("/v1/job/([a-f0-9-]*)/plan"))
+                .willReturn(ok("{\"FailedTGAllocs\": null}")));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+        when(template.getJobTemplate()).thenReturn("{}");
+        when(template.getRemoteFs()).thenReturn("");
+
+        // WHEN / THEN
+        assertThat(api.checkAllocAvailability(template), is(true));
+    }
+
+    @Test
+    public void testCheckAllocAvailabilityWhenNomadIsFull() {
+        // GIVEN - a populated FailedTGAllocs is the only thing that stops provisioning
+        stubFor(post(urlMatching("/v1/job/([a-f0-9-]*)/plan"))
+                .willReturn(ok("{\"FailedTGAllocs\": {\"jenkins-worker-taskgroup\": {\"NodesEvaluated\": 3}}}")));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+        when(template.getJobTemplate()).thenReturn("{}");
+        when(template.getRemoteFs()).thenReturn("");
+
+        // WHEN / THEN
+        assertThat(api.checkAllocAvailability(template), is(false));
     }
 
     @Test

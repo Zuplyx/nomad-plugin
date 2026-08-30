@@ -28,6 +28,7 @@ import org.jenkinsci.plugins.nomad.Api.JobSummary;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.verb.POST;
 
@@ -65,6 +66,9 @@ public class NomadCloud extends AbstractCloudImpl {
     private final Secret serverPassword;
     private final int workerTimeout;
     private final List<NomadWorkerTemplate> templates;
+    // Opt-in: costs an extra /plan round trip per provisioned worker, and only helps
+    // controllers that have a second cloud to fall through to.
+    private boolean checkCapacityBeforeProvisioning;
 
     // non persistent fields
     private transient NomadApi nomad;
@@ -145,14 +149,12 @@ public class NomadCloud extends AbstractCloudImpl {
                 while (excessWorkload > 0 && checkExcessJobs(template,existingNodes,nodes.size())) {
                     LOGGER.log(Level.INFO, "Excess workload of " + excessWorkload + ", provisioning new Jenkins worker on Nomad cluster");
                     
-                    boolean planAllocation = nomad.checkAllocAvailability(template);
-                    if (planAllocation == false) {
-                    	LOGGER.log(Level.INFO, "Nomad is unable to allocate the jobs anymore, exit the current provisioning loop");
-                    	return nodes;
-                    } else {
-                    	LOGGER.log(Level.INFO, "Nomad have capacity for one more job, let's continue");
+                    if (checkCapacityBeforeProvisioning && !nomad.checkAllocAvailability(template)) {
+                        LOGGER.log(Level.INFO, "Nomad cannot allocate any more jobs; leaving the rest of the "
+                                + "workload to other clouds");
+                        return nodes;
                     }
-                    		
+
                     final String workerName = template.createWorkerName();
                     nodes.add(new NodeProvisioner.PlannedNode(
                             workerName,
@@ -266,6 +268,15 @@ public class NomadCloud extends AbstractCloudImpl {
 
     public boolean isPrune() {
         return prune;
+    }
+
+    public boolean isCheckCapacityBeforeProvisioning() {
+        return checkCapacityBeforeProvisioning;
+    }
+
+    @DataBoundSetter
+    public void setCheckCapacityBeforeProvisioning(boolean checkCapacityBeforeProvisioning) {
+        this.checkCapacityBeforeProvisioning = checkCapacityBeforeProvisioning;
     }
 
     public List<NomadWorkerTemplate> getTemplates() {

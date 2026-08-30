@@ -4,6 +4,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
 import org.junit.Rule;
@@ -44,7 +47,7 @@ public class NomadCloudTest {
         Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 3);
 
         // THEN
-        assertThat(result.size(), is(0));
+        assertThat(result.size(), is(3));
     }
 
     @Test
@@ -103,6 +106,29 @@ public class NomadCloudTest {
         assertThat(result, is(result));
     }
 
+
+    /**
+     * The capacity pre-check is opt-in: upgrading must not start issuing a /plan request per
+     * provisioned worker. See issue #185.
+     */
+    @Test
+    public void testCapacityPreCheckIsDisabledByDefault() {
+        // GIVEN
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        NomadCloud cloud = createCloud(template);
+        NomadApi nomadApi = mock(NomadApi.class);
+        cloud.setNomad(nomadApi);
+
+        // THEN
+        assertThat(cloud.isCheckCapacityBeforeProvisioning(), is(false));
+
+        // WHEN
+        cloud.provision(label, 2);
+
+        // THEN
+        verify(nomadApi, never()).checkAllocAvailability(template);
+    }
     private NomadCloud createCloud(NomadWorkerTemplate template) {
         return new NomadCloud(
                 "nomad",
