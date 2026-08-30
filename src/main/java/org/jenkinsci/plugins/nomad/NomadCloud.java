@@ -141,8 +141,8 @@ public class NomadCloud extends AbstractCloudImpl {
 
             int existingNodes = 0;
             // Let's avoid an useless request to nomad api if no MaxConcurrentJobs is configured
-            if(template.getMaxConcurrentJobs() >= 0) {
-                existingNodes = this.nomad.getRunningWorkers(template.getPrefix()).length;
+            if (template.hasConcurrencyLimit()) {
+                existingNodes = countActiveWorkers(template.getPrefix());
             }
 
             try {
@@ -181,15 +181,39 @@ public class NomadCloud extends AbstractCloudImpl {
      * @param created
      * @return false if the template maximum configured jobs isn't reached, otherwise, return true
      */
-    private boolean checkExcessJobs(NomadWorkerTemplate template,int existingNodes, int created) {
-        int maxAllowed = template.getMaxConcurrentJobs();
-        int maxAllowedLeft = maxAllowed - existingNodes - created;
+    private boolean checkExcessJobs(NomadWorkerTemplate template, int existingNodes, int created) {
+        Integer maxAllowed = template.getMaxConcurrentJobs();
+        if (maxAllowed == null || maxAllowed < 0) {
+            return true; // unlimited
+        }
 
-        if (maxAllowed >= 0 && created >= maxAllowedLeft) {
-            LOGGER.log((Level.INFO), "Maximum jobs for template prefix: "+template.getPrefix()+" excedeed | Maximum: "+maxAllowed);
+        if (existingNodes + created >= maxAllowed) {
+            LOGGER.log(Level.INFO, "Maximum jobs for template prefix: " + template.getPrefix() + " reached | Maximum: "
+                    + maxAllowed + ", active: " + existingNodes + ", planned in this round: " + created);
             return false;
         }
         return true;
+    }
+
+    /**
+     * Counts the Nomad jobs for a prefix that are not in a terminal state.
+     * <p>
+     * Nomad keeps completed batch jobs around until its own garbage collection runs
+     * (job_gc_threshold, 4h by default), so counting every job returned for the prefix
+     * would let dead jobs fill the template's concurrency limit and stall provisioning.
+     *
+     * @param prefix job name prefix of the template
+     * @return number of pending or running jobs
+     */
+    private int countActiveWorkers(String prefix) {
+        JobInfo[] workers = this.nomad.getRunningWorkers(prefix);
+        int active = 0;
+        for (JobInfo worker : workers) {
+            if (!"dead".equalsIgnoreCase(worker.getStatus())) {
+                active++;
+            }
+        }
+        return active;
     }
 
 

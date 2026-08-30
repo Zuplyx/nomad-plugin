@@ -9,7 +9,9 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.io.IOUtils;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.verb.POST;
 
@@ -29,7 +31,9 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
 
     // persistent fields
     private final String prefix;
-    private final int maxConcurrentJobs;
+    // Nullable on purpose: absent from an existing config.xml means "unlimited".
+    // A primitive here would deserialize to 0 and block all provisioning on upgrade.
+    private Integer maxConcurrentJobs;
     private final int idleTerminationInMinutes;
     private final boolean reusable;
     private final int numExecutors;
@@ -99,7 +103,6 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
     public NomadWorkerTemplate(
             String prefix,
             String labels,
-            int maxConcurrentJobs,
             int idleTerminationInMinutes,
             boolean reusable,
             int numExecutors,
@@ -107,7 +110,6 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
             String jobTemplate
     ) {
         this.prefix = prefix.isEmpty() ? SLAVE_PREFIX : prefix;
-        this.maxConcurrentJobs = maxConcurrentJobs;
         this.idleTerminationInMinutes = idleTerminationInMinutes;
         this.reusable = reusable;
         this.numExecutors = numExecutors;
@@ -130,8 +132,26 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
         return prefix;
     }
 
-    public int getMaxConcurrentJobs() {
+    /**
+     * Maximum number of concurrent Nomad jobs for this template.
+     * @return the configured limit, or {@code null} when unlimited
+     */
+    @CheckForNull
+    public Integer getMaxConcurrentJobs() {
         return maxConcurrentJobs;
+    }
+
+    @DataBoundSetter
+    public void setMaxConcurrentJobs(Integer maxConcurrentJobs) {
+        this.maxConcurrentJobs = maxConcurrentJobs;
+    }
+
+    /**
+     * @return true when this template caps how many jobs may run concurrently.
+     *         A null or negative value means unlimited.
+     */
+    public boolean hasConcurrencyLimit() {
+        return maxConcurrentJobs != null && maxConcurrentJobs >= 0;
     }
 
     public int getIdleTerminationInMinutes() {
@@ -208,7 +228,6 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
             NomadWorkerTemplate template = new NomadWorkerTemplate(
                     "validate-template",
                     null,
-                    -1,
                     0,
                     false,
                     1,

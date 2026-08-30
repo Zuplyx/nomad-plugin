@@ -12,7 +12,7 @@
             <f:textbox />
         </f:entry>
 
-        <f:entry title="Maximum Number of concurrent Job (-1 for unmimited)" field="maxConcurrentJobs">
+        <f:entry title="Maximum number of concurrent jobs (-1 for unlimited)" field="maxConcurrentJobs">
             <f:number default="-1" />
         </f:entry>
 

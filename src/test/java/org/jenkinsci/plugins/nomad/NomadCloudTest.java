@@ -4,11 +4,16 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
+import org.jenkinsci.plugins.nomad.Api.JobInfo;
+import jenkins.model.Jenkins;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -106,6 +111,69 @@ public class NomadCloudTest {
         assertThat(result, is(result));
     }
 
+    /**
+     * Regression test for the concurrency cap arithmetic. The original predicate subtracted
+     * {@code created} from the allowance and then compared against {@code created} again, so a
+     * limit of 4 stopped after 2. See PR #196.
+     */
+    @Test
+    public void testProvisionStopsExactlyAtConcurrencyLimit() {
+        // GIVEN
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        template.setMaxConcurrentJobs(4);
+        NomadCloud cloud = createCloud(template);
+        cloud.setNomad(createNomadApi(new JobInfo[0]));
+
+        // WHEN
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 10);
+
+        // THEN
+        assertThat(result.size(), is(4));
+    }
+
+    /**
+     * Nomad keeps completed batch jobs until its own GC runs, so counting every job returned for
+     * the prefix would let dead jobs fill the limit and stall provisioning entirely.
+     */
+    @Test
+    public void testDeadJobsDoNotCountTowardsConcurrencyLimit() {
+        // GIVEN
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        template.setMaxConcurrentJobs(3);
+        NomadCloud cloud = createCloud(template);
+        cloud.setNomad(createNomadApi(new JobInfo[]{
+                createJobInfo("dead"), createJobInfo("dead"), createJobInfo("running")}));
+
+        // WHEN
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 10);
+
+        // THEN - only the running job counts, so 2 of the 3 slots are still free
+        assertThat(result.size(), is(2));
+    }
+
+    /**
+     * A template loaded from a config.xml written before maxConcurrentJobs existed has no value for
+     * it. That must mean "unlimited"; a primitive int would have deserialized to 0 and blocked all
+     * provisioning on upgrade. See PR #196.
+     */
+    @Test
+    public void testTemplateWithoutConcurrencyLimitIsUnlimited() {
+        // GIVEN
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        NomadCloud cloud = createCloud(template);
+        NomadApi nomadApi = createNomadApi(new JobInfo[0]);
+        cloud.setNomad(nomadApi);
+
+        // WHEN
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 5);
+
+        // THEN - and Nomad is never asked to count jobs, since there is no limit to enforce
+        assertThat(result.size(), is(5));
+        verify(nomadApi, never()).getRunningWorkers(anyString());
+    }
 
     /**
      * The capacity pre-check is opt-in: upgrading must not start issuing a /plan request per
@@ -129,6 +197,42 @@ public class NomadCloudTest {
         // THEN
         verify(nomadApi, never()).checkAllocAvailability(template);
     }
+
+    /**
+     * The upgrade path that matters: XStream does not call the constructor, so a template whose
+     * config.xml predates maxConcurrentJobs simply has no value for it. As a primitive int that
+     * deserialized to 0, meaning "no workers allowed", and bricked provisioning. See PR #196.
+     */
+    @Test
+    public void testTemplateDeserializedWithoutTheFieldIsUnlimited() {
+        // GIVEN a config.xml written before maxConcurrentJobs existed
+        String xml = "<org.jenkinsci.plugins.nomad.NomadWorkerTemplate>"
+                + "<prefix>jenkins</prefix>"
+                + "<labels>linux</labels>"
+                + "<idleTerminationInMinutes>10</idleTerminationInMinutes>"
+                + "<reusable>true</reusable>"
+                + "<numExecutors>1</numExecutors>"
+                + "<remoteFs></remoteFs>"
+                + "<jobTemplate>{}</jobTemplate>"
+                + "</org.jenkinsci.plugins.nomad.NomadWorkerTemplate>";
+
+        // WHEN
+        NomadWorkerTemplate template = (NomadWorkerTemplate) Jenkins.XSTREAM2.fromXML(xml);
+
+        // THEN
+        assertThat(template.getMaxConcurrentJobs(), is(nullValue()));
+    }
+
+    private NomadApi createNomadApi(JobInfo[] runningWorkers) {
+        NomadApi nomadApi = mock(NomadApi.class);
+        when(nomadApi.getRunningWorkers(anyString())).thenReturn(runningWorkers);
+        return nomadApi;
+    }
+
+    private JobInfo createJobInfo(String status) {
+        return new JobInfo(UUID.randomUUID().toString(), "jenkins", "batch", status, 50, null);
+    }
+
     private NomadCloud createCloud(NomadWorkerTemplate template) {
         return new NomadCloud(
                 "nomad",
@@ -148,7 +252,6 @@ public class NomadCloudTest {
         return new NomadWorkerTemplate(
                 "jenkins",
                 labels,
-                -1,
                 1,
                 true,
                 1,
