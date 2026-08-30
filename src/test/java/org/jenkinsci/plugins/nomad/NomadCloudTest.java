@@ -6,21 +6,27 @@ import static org.hamcrest.Matchers.nullValue;
 
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
-public class NomadCloudTest {
+@WithJenkins
+class NomadCloudTest {
 
-    @Rule
-    public JenkinsRule r = new JenkinsRule();
+    private JenkinsRule r;
+
+    @BeforeEach
+    void setUp(JenkinsRule rule) {
+        r = rule;
+    }
 
     @Test
-    public void testCanProvision() {
+    void testCanProvision() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -34,7 +40,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testProvision() {
+    void testProvision() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -48,7 +54,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabels() {
+    void testGetTemplateWithLabels() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -62,7 +68,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelsNull() {
+    void testGetTemplateWithLabelsNull() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(null);
@@ -76,7 +82,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelsEmpty() {
+    void testGetTemplateWithLabelsEmpty() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate("");
@@ -90,7 +96,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelNull() {
+    void testGetTemplateWithLabelNull() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(null);

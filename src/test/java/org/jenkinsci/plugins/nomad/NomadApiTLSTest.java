@@ -14,15 +14,15 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import java.net.URISyntaxException;
 import java.nio.file.Paths;
 
-import org.junit.After;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -33,8 +33,9 @@ import hudson.util.Secret;
 /**
  * Checks that the TLS support is working as expected.
  */
-@RunWith(MockitoJUnitRunner.class)
-public class NomadApiTLSTest {
+@WithJenkins
+@ExtendWith(MockitoExtension.class)
+class NomadApiTLSTest {
 
     /**
      * Keystore: contains the public and private keys (e.g. KEYSTORE_CLIENT_A contains key pair of client a)
@@ -53,9 +54,6 @@ public class NomadApiTLSTest {
 
     private static Secret PASSWORD;
 
-    @ClassRule
-    public static JenkinsRule j = new JenkinsRule();
-
     @Mock
     private NomadCloud nomadCloud;
 
@@ -66,22 +64,24 @@ public class NomadApiTLSTest {
 
     /**
      * Since we are using self-signed certificates, we have to emulate that our server certificate (server_a.p12) is issued by one of the
-     * default CA's.
+     * default CA's. {@link Secret#fromString} needs a running Jenkins, hence the {@link JenkinsRule} parameter.
      */
-    @BeforeClass
-    public static void setDefaultTrustStore() {
+    @BeforeEach
+    void setDefaultTrustStore(JenkinsRule j) {
         PASSWORD = Secret.fromString("changeit");
         System.setProperty("javax.net.ssl.trustStore", TRUSTSTORE_SERVER_A);
         System.setProperty("javax.net.ssl.trustStorePassword", PASSWORD.getPlainText());
     }
 
-    @After
-    public void stopWireMock() {
-        wireMockServer.stop();
+    @AfterEach
+    void stopWireMock() {
+        if (wireMockServer != null) {
+            wireMockServer.stop();
+        }
     }
 
     @Test
-    public void testServerIsTrustworthyWithDefaultCA() {
+    void testServerIsTrustworthyWithDefaultCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_A, null, false);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -96,7 +96,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testServerIsNotTrustworthyWithDefaultCA() {
+    void testServerIsNotTrustworthyWithDefaultCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_B, null, false);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -111,7 +111,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testServerIsTrustworthyWithCustomCA() {
+    void testServerIsTrustworthyWithCustomCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_B, null, false);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -128,7 +128,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testClientIsTrustworthyWithDefaultCA() {
+    void testClientIsTrustworthyWithDefaultCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_A, TRUSTSTORE_CLIENT_A, true);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -145,7 +145,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testClientIsNotTrustworthyWithDefaultCA() {
+    void testClientIsNotTrustworthyWithDefaultCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_A, TRUSTSTORE_CLIENT_B, true);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -162,7 +162,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testClientIsTrustworthyWithCustomCA() {
+    void testClientIsTrustworthyWithCustomCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_B, TRUSTSTORE_CLIENT_A, true);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());
@@ -181,7 +181,7 @@ public class NomadApiTLSTest {
     }
 
     @Test
-    public void testClientIsNotTrustworthyWithCustomCA() {
+    void testClientIsNotTrustworthyWithCustomCA() {
         // GIVEN
         startWiremock(KEYSTORE_SERVER_B, TRUSTSTORE_CLIENT_B, true);
         when(nomadCloud.getNomadUrl()).thenReturn(wireMockServer.baseUrl());

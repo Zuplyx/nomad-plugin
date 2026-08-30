@@ -18,31 +18,35 @@ import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 import java.util.UUID;
 
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
 import org.jenkinsci.plugins.nomad.Api.JobSummary;
 import org.json.JSONObject;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 
 import hudson.util.FormValidation;
 
 /**
  * Checks that the NomadApi is working as expected.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class NomadApiTest {
 
-    @Rule
-    public WireMockRule wireMockRule = new WireMockRule(0);
+    @RegisterExtension
+    static final WireMockExtension wireMockRule = WireMockExtension.newInstance()
+            .options(wireMockConfig().dynamicPort())
+            .configureStaticDsl(true)
+            .build();
 
     @Mock
     NomadWorkerTemplate template;
@@ -54,7 +58,7 @@ public class NomadApiTest {
     NomadApi api;
 
     @Test
-    public void testCheckConnection() {
+    void testCheckConnection() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(ok("{}")));
@@ -69,7 +73,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStartWorker() {
+    void testStartWorker() {
         // GIVEN
         stubFor(put(urlEqualTo("/v1/jobs"))
                 .willReturn(ok()));
@@ -91,7 +95,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStartWorkerWithNS() {
+    void testStartWorkerWithNS() {
         // GIVEN
         stubFor(put(urlEqualTo("/v1/jobs"))
                 .willReturn(ok()));
@@ -113,7 +117,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStopWorker() {
+    void testStopWorker() {
         // GIVEN
         String workerName = UUID.randomUUID().toString();
         stubFor(delete(urlEqualTo("/v1/job/" + workerName))
@@ -128,7 +132,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStopWorkerWithNS() {
+    void testStopWorkerWithNS() {
         // GIVEN
         String workerName = UUID.randomUUID().toString();
         stubFor(delete(urlEqualTo("/v1/job/" + workerName + "?namespace=ns1"))
@@ -143,7 +147,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStopWorkerWithNSAndRegion() {
+    void testStopWorkerWithNSAndRegion() {
         // GIVEN
         String workerName = UUID.randomUUID().toString();
         stubFor(delete(urlEqualTo("/v1/job/" + workerName + "?namespace=ns1&region=regionA"))
@@ -158,7 +162,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testStopWorkerWithNSAndGlobalRegion() {
+    void testStopWorkerWithNSAndGlobalRegion() {
         // GIVEN
         String workerName = UUID.randomUUID().toString();
         stubFor(delete(urlEqualTo("/v1/job/" + workerName + "?namespace=ns1"))
@@ -173,7 +177,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testValidateTemplateJSON() {
+    void testValidateTemplateJSON() {
         // GIVEN
         stubFor(post(urlMatching("/v1/job/([a-f0-9-]*)/plan"))
                 .willReturn(ok()));
@@ -190,7 +194,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testValidateTemplateHCL() {
+    void testValidateTemplateHCL() {
         // GIVEN
         stubFor(post(urlMatching("/v1/jobs/parse"))
                 .willReturn(ok("{}")));
@@ -210,7 +214,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testGetJobs() {
+    void testGetJobs() {
         // GIVEN
         stubFor(get(urlMatching("/v1/jobs\\?prefix=jenkins&namespace=\\*"))
                 .willReturn(ok("[{\"ID\":\"jenkins-A\",\"Name\":\"jenkins-A\",\"Priority\":50,\"Status\":\"pending\"}]")));
@@ -228,7 +232,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testGetJobsWithNamespace() {
+    void testGetJobsWithNamespace() {
         // GIVEN
         stubFor(get(urlMatching("/v1/jobs\\?prefix=jenkins&namespace=\\*"))
                 .willReturn(ok("[{\"ID\":\"jenkins-A\",\"Name\":\"jenkins-A\",\"Priority\":50,\"Status\":\"pending\", \"JobSummary\": { \"JobID\": \"example\", \"Namespace\": \"ns1\" } }]")));
@@ -250,7 +254,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testGetJobsIsEmpty() {
+    void testGetJobsIsEmpty() {
         // GIVEN
         stubFor(get(urlMatching("/v1/jobs\\?prefix=jenkins&namespace=\\*"))
                 .willReturn(ok("[]")));
@@ -264,7 +268,7 @@ public class NomadApiTest {
     }
 
     @Test
-    public void testACLTokenIsPresent() {
+    void testACLTokenIsPresent() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(ok("{}")));

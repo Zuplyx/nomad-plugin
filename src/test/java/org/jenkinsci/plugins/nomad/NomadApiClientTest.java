@@ -14,6 +14,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.ok;
 import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -21,14 +22,14 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 
 import hudson.util.FormValidation;
 
@@ -36,11 +37,14 @@ import hudson.util.FormValidation;
  * Checks that the NomadApi is working as expected especially how the client behaves when the Nomad is not available or the configuration
  * is correct.
  */
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class NomadApiClientTest {
 
-    @Rule
-    public WireMockRule wireMockRule = new WireMockRule(0);
+    @RegisterExtension
+    static final WireMockExtension wireMockRule = WireMockExtension.newInstance()
+            .options(wireMockConfig().dynamicPort())
+            .configureStaticDsl(true)
+            .build();
 
     @Mock
     NomadCloud nomadCloud;
@@ -74,7 +78,7 @@ public class NomadApiClientTest {
      * Checks that only one client instance exists at a time even when multiple threads requesting the client in parallel.
      */
     @Test
-    public void testClientIsThreadSafe() {
+    void testClientIsThreadSafe() {
 
         // WHEN
         int count = IntStream.range(0, 100)
@@ -88,7 +92,7 @@ public class NomadApiClientTest {
     }
 
     @Test
-    public void testCheckConnectionSuccessful() {
+    void testCheckConnectionSuccessful() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(ok("{}")));
@@ -104,7 +108,7 @@ public class NomadApiClientTest {
     }
 
     @Test
-    public void testCheckConnectionUnauthorized() {
+    void testCheckConnectionUnauthorized() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(aResponse()
@@ -121,7 +125,7 @@ public class NomadApiClientTest {
     }
 
     @Test
-    public void testCheckConnectionForbidden() {
+    void testCheckConnectionForbidden() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(aResponse()
@@ -138,7 +142,7 @@ public class NomadApiClientTest {
     }
 
     @Test
-    public void testCheckConnectionNotFound() {
+    void testCheckConnectionNotFound() {
         // GIVEN
         stubFor(get(urlEqualTo("/v1/agent/self"))
                 .willReturn(aResponse()
@@ -156,7 +160,7 @@ public class NomadApiClientTest {
     }
 
     @Test
-    public void testCheckConnectionUnknownHost() {
+    void testCheckConnectionUnknownHost() {
         // GIVEN
         when(nomadCloud.getNomadUrl()).thenReturn("http://" + UUID.randomUUID());
 
