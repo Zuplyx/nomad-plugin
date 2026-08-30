@@ -37,7 +37,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: mvn -B -ntp clean verify
+        run: mvn -B -ntp -s ci/settings.xml clean verify
 
       - name: Upload plugin
         if: matrix.jdk == 21

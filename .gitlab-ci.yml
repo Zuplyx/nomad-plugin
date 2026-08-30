@@ -3,7 +3,7 @@
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
-  MAVEN_CLI_OPTS: "-B -ntp"
+  MAVEN_CLI_OPTS: "-B -ntp -s ci/settings.xml"
 
 cache:
   key: "$CI_COMMIT_REF_SLUG"

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven settings for CI. Passed explicitly with `-s ci/settings.xml`; it is deliberately
+  NOT read by local builds, so a developer's own ~/.m2/settings.xml (mirrors, credentials)
+  is never overridden.
+
+  Why it is needed: a plugin's parent POM and its build extension (maven-hpi-plugin,
+  required by <packaging>hpi</packaging>) are resolved BEFORE the project's own
+  <repositories>/<pluginRepositories> take effect. Without repo.jenkins-ci.org declared
+  here, Maven only knows Maven Central and the incrementals repo at that point, and logs:
+
+    [WARNING] The POM for org.jenkins-ci.tools:maven-hpi-plugin:jar:... is missing
+    [WARNING] Failed to build parent project for ...
+
+  Locally the same job is done by ~/.m2/settings.xml, per
+  https://www.jenkins.io/doc/developer/tutorial/prepare/
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              http://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <pluginGroups>
+    <pluginGroup>org.jenkins-ci.tools</pluginGroup>
+  </pluginGroups>
+  <profiles>
+    <profile>
+      <id>jenkins</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <repositories>
+        <repository>
+          <id>repo.jenkins-ci.org</id>
+          <url>https://repo.jenkins-ci.org/public/</url>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>repo.jenkins-ci.org</id>
+          <url>https://repo.jenkins-ci.org/public/</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+</settings>
