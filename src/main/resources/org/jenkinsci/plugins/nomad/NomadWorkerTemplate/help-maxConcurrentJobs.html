@@ -1,0 +1,12 @@
+<div>
+    Maximum number of Nomad jobs this template may have running at once.<br/>
+    Leave empty or set <code>-1</code> for unlimited.<br/>
+    <br/>
+    Only jobs that are still pending or running count towards the limit; jobs Nomad has
+    finished with do not, even though Nomad keeps them listed until its own garbage
+    collection runs.<br/>
+    <br/>
+    <b>Note:</b> the count is made by Nomad job name prefix. Two templates that share the
+    same <i>Prefix</i> therefore share a single limit. Give each template its own prefix if
+    you want their limits to be independent.
+</div>
