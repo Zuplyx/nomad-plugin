@@ -16,11 +16,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 import hudson.Util;
 import hudson.XmlFile;
@@ -31,14 +30,13 @@ import hudson.XmlFile;
  * <ul>
  *     <li>0.x.y - introduced jenkinsUrl, workerUrl and driver</li>
  *     <li>0.7.4 - contains jenkinsUrl, workerUrl and driver</li>
- *     <li>0.8.0 - introduced jobTemplate and removed jenkinsUrl, workerUrl, jenkinsTunnel and almost all template fields</li>
+ *     <li>0.9.0 - introduced jobTemplate and removed jenkinsUrl, workerUrl, jenkinsTunnel and almost all template fields</li>
  * </ul>
  */
-@RunWith(Parameterized.class)
-public class NomadCloudConfigurationTest {
+@WithJenkins
+class NomadCloudConfigurationTest {
 
-    @Parameterized.Parameters(name = "path: {0}")
-    public static Iterable<String> data() {
+    static Iterable<String> data() {
         List<String> data = new LinkedList<>();
         for (String version : Arrays.asList("0.x.y", "0.7.4", "0.9.0")) {
             for (String type : Arrays.asList("java", "docker", "raw_exec")) {
@@ -48,14 +46,9 @@ public class NomadCloudConfigurationTest {
         return data;
     }
 
-    @Parameterized.Parameter
-    public String path;
-
-    @Rule
-    public JenkinsRule r = new JenkinsRule();
-
-    @Test
-    public void test() throws URISyntaxException, IOException, IllegalAccessException, NoSuchFieldException {
+    @ParameterizedTest(name = "path: {0}")
+    @MethodSource("data")
+    void test(String path, JenkinsRule r) throws URISyntaxException, IOException, IllegalAccessException, NoSuchFieldException {
         // GIVEN
         NomadCloud nomadCloud = createNomadCloud(path);
         NomadWorkerTemplate template = nomadCloud.getTemplates().get(0);

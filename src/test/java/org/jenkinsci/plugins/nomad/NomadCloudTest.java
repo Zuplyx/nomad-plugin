@@ -12,23 +12,29 @@ import static org.mockito.Mockito.when;
 
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
-import org.jenkinsci.plugins.nomad.Api.JobInfo;
 import jenkins.model.Jenkins;
-import org.junit.Rule;
-import org.junit.Test;
+import org.jenkinsci.plugins.nomad.Api.JobInfo;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
-public class NomadCloudTest {
+@WithJenkins
+class NomadCloudTest {
 
-    @Rule
-    public JenkinsRule r = new JenkinsRule();
+    private JenkinsRule r;
+
+    @BeforeEach
+    void setUp(JenkinsRule rule) {
+        r = rule;
+    }
 
     @Test
-    public void testCanProvision() {
+    void testCanProvision() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -42,7 +48,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testProvision() {
+    void testProvision() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -56,7 +62,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabels() {
+    void testGetTemplateWithLabels() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -70,7 +76,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelsNull() {
+    void testGetTemplateWithLabelsNull() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(null);
@@ -84,7 +90,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelsEmpty() {
+    void testGetTemplateWithLabelsEmpty() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate("");
@@ -98,7 +104,7 @@ public class NomadCloudTest {
     }
 
     @Test
-    public void testGetTemplateWithLabelNull() {
+    void testGetTemplateWithLabelNull() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(null);
@@ -117,7 +123,7 @@ public class NomadCloudTest {
      * limit of 4 stopped after 2. See PR #196.
      */
     @Test
-    public void testProvisionStopsExactlyAtConcurrencyLimit() {
+    void testProvisionStopsExactlyAtConcurrencyLimit() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -137,7 +143,7 @@ public class NomadCloudTest {
      * the prefix would let dead jobs fill the limit and stall provisioning entirely.
      */
     @Test
-    public void testDeadJobsDoNotCountTowardsConcurrencyLimit() {
+    void testDeadJobsDoNotCountTowardsConcurrencyLimit() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -159,7 +165,7 @@ public class NomadCloudTest {
      * provisioning on upgrade. See PR #196.
      */
     @Test
-    public void testTemplateWithoutConcurrencyLimitIsUnlimited() {
+    void testTemplateWithoutConcurrencyLimitIsUnlimited() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -180,7 +186,7 @@ public class NomadCloudTest {
      * provisioned worker. See issue #185.
      */
     @Test
-    public void testCapacityPreCheckIsDisabledByDefault() {
+    void testCapacityPreCheckIsDisabledByDefault() {
         // GIVEN
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
@@ -204,7 +210,7 @@ public class NomadCloudTest {
      * deserialized to 0, meaning "no workers allowed", and bricked provisioning. See PR #196.
      */
     @Test
-    public void testTemplateDeserializedWithoutTheFieldIsUnlimited() {
+    void testTemplateDeserializedWithoutTheFieldIsUnlimited() {
         // GIVEN a config.xml written before maxConcurrentJobs existed
         String xml = "<org.jenkinsci.plugins.nomad.NomadWorkerTemplate>"
                 + "<prefix>jenkins</prefix>"

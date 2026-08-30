@@ -2,8 +2,6 @@ version: 2
 updates:
   - package-ecosystem: maven
     directory: "/"
-    reviewers:
-      - multani
     schedule:
       interval: daily
 

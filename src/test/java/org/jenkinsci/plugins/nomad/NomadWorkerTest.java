@@ -1,24 +1,23 @@
 package org.jenkinsci.plugins.nomad;
 
-import org.junit.Rule;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+
+import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
-import static org.junit.Assert.assertTrue;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
-public class NomadWorkerTest {
-
-    @Rule
-    public JenkinsRule j = new JenkinsRule();
+@WithJenkins
+class NomadWorkerTest {
 
     @Test
-    public void testRetentionStrategyReusable() throws Exception {
+    void testRetentionStrategyReusable(JenkinsRule j) throws Exception {
         NomadWorker worker = new NomadWorker("name", "cloudName", "label", 1, 10, true, "/tmp");
-        assertTrue(worker.getRetentionStrategy() instanceof NomadRetentionStrategy);
+        assertInstanceOf(NomadRetentionStrategy.class, worker.getRetentionStrategy());
     }
 
     @Test
-    public void testRetentionStrategyOnce() throws Exception {
+    void testRetentionStrategyOnce(JenkinsRule j) throws Exception {
         NomadWorker worker = new NomadWorker("name", "cloudName", "label", 1, 10, false, "/tmp");
-        assertTrue(worker.getRetentionStrategy() instanceof NomadOnceRetentionStrategy);
+        assertInstanceOf(NomadOnceRetentionStrategy.class, worker.getRetentionStrategy());
     }
 }
