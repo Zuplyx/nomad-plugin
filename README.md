@@ -4,9 +4,15 @@ Jenkins Nomad Cloud Plugin
 This plugin uses HashiCorp's [Nomad scheduler](https://www.nomadproject.io/) to 
 provision new build workers based on workload.
 
-All documentation is available under the Jenkins [wiki page](https://wiki.jenkins-ci.org/display/JENKINS/Nomad+Plugin) for this plugin
+Documentation is available on the [plugin site](https://plugins.jenkins.io/nomad/).
 
 **Community contributions are very welcome!**
+
+## Requirements
+
+* Jenkins 2.541.3 or newer.
+* Java 17 or 21.
+* A Nomad cluster reachable from the Jenkins controller.
 
 ## TLS Support
 
