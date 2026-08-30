@@ -1,0 +1,16 @@
+<div>
+    Before starting each worker, ask Nomad whether it could actually place the job, using a
+    dry-run plan. If Nomad reports that it could not, provisioning stops and the remaining
+    workload is left for other clouds to pick up.<br/>
+    <br/>
+    Useful when Jenkins has a second cloud configured after this one: without it, Nomad
+    accepts every job even with no capacity to place it, the worker never connects, and
+    Jenkins loops creating and deleting it instead of falling through to the other cloud.<br/>
+    <br/>
+    Disabled by default, because it costs one extra API request per worker started and
+    brings no benefit if this is your only cloud.<br/>
+    <br/>
+    If the check cannot be completed (for example the request fails, or the ACL token lacks
+    permission to plan jobs), provisioning continues as normal and a warning is logged.
+    A failing check never blocks provisioning by itself.
+</div>
