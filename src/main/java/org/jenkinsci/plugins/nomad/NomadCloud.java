@@ -4,7 +4,7 @@ package org.jenkinsci.plugins.nomad;
 import hudson.Util;
 import static com.cloudbees.plugins.credentials.CredentialsMatchers.filter;
 import static com.cloudbees.plugins.credentials.CredentialsMatchers.withId;
-import static com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentials;
+import static com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentialsInItemGroup;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
+import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
 import org.jenkinsci.plugins.nomad.Api.JobSummary;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
@@ -30,9 +32,7 @@ import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.verb.POST;
 
 import com.cloudbees.plugins.credentials.CredentialsMatchers;
-import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
-import com.google.common.base.Strings;
 
 import hudson.Extension;
 import hudson.model.Computer;
@@ -72,11 +72,6 @@ public class NomadCloud extends AbstractCloudImpl {
     private transient NomadApi nomad;
     private transient int pending = 0;
 
-    // legacy fields (we have to keep them for backward compatibility)
-    private transient String jenkinsUrl;
-    private transient String jenkinsTunnel;
-    private transient String workerUrl;
-
     @DataBoundConstructor
     public NomadCloud(
             String name,
@@ -108,13 +103,13 @@ public class NomadCloud extends AbstractCloudImpl {
 
     private static String secretFor(String credentialsId) {
         List<StringCredentials> creds = filter(
-                lookupCredentials(StringCredentials.class,
+                lookupCredentialsInItemGroup(StringCredentials.class,
                         Jenkins.get(),
-                        ACL.SYSTEM,
+                        ACL.SYSTEM2,
                         Collections.emptyList()),
                 withId(Util.fixNull(credentialsId).trim())
         );
-        if (creds.size() > 0) {
+        if (!creds.isEmpty()) {
             return creds.get(0).getSecret().getPlainText();
         } else {
             return null;
@@ -123,13 +118,13 @@ public class NomadCloud extends AbstractCloudImpl {
 
     private Object readResolve() {
         nomad = new NomadApi(this);
-        MigrationHelper.migrate(this);
         return this;
     }
 
     @Override
-    public Collection<NodeProvisioner.PlannedNode> provision(Label label, int excessWorkload) {
+    public Collection<NodeProvisioner.PlannedNode> provision(CloudState state, int excessWorkload) {
 
+        Label label = state.getLabel();
         List<NodeProvisioner.PlannedNode> nodes = new ArrayList<>();
         final NomadWorkerTemplate template = getTemplate(label);
 
@@ -263,8 +258,8 @@ public class NomadCloud extends AbstractCloudImpl {
     }
 
     @Override
-    public boolean canProvision(Label label) {
-        return Optional.ofNullable(getTemplate(label)).isPresent();
+    public boolean canProvision(CloudState state) {
+        return Optional.ofNullable(getTemplate(state.getLabel())).isPresent();
     }
 
     // Getters
@@ -338,13 +333,14 @@ public class NomadCloud extends AbstractCloudImpl {
     }
 
     @Extension
+    @Symbol("nomad")
     public static final class DescriptorImpl extends Descriptor<Cloud> {
 
         public DescriptorImpl() {
             load();
         }
 
-        public String getDisplayName() {
+        public @NonNull String getDisplayName() {
             return "Nomad";
         }
 
@@ -380,25 +376,34 @@ public class NomadCloud extends AbstractCloudImpl {
         @POST
         public FormValidation doCheckName(@QueryParameter String name) {
             Objects.requireNonNull(Jenkins.get()).checkPermission(Jenkins.ADMINISTER);
-            if (Strings.isNullOrEmpty(name)) {
+            if (Util.fixEmptyAndTrim(name) == null) {
                 return FormValidation.error("Name must be set");
             } else {
                 return FormValidation.ok();
             }
         }
 
-        public ListBoxModel doFillNomadACLCredentialsIdItems(@QueryParameter("nomadACLCredentialsId") String credentialsId) {
+        /**
+         * Populates the Nomad ACL credentials dropdown. Invoked reflectively by Stapler for the
+         * {@code nomadACLCredentialsId} field's {@code <c:select/>}, so it has no direct callers.
+         */
+        @POST
+        public ListBoxModel doFillNomadACLCredentialsIdItems(@QueryParameter String nomadACLCredentialsId) {
+            StandardListBoxModel model = new StandardListBoxModel();
             if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                return new StandardListBoxModel().includeCurrentValue(credentialsId);
+                // Do not enumerate credentials for users who may not see them, but keep the
+                // configured value so saving the form does not silently clear it.
+                return model.includeCurrentValue(nomadACLCredentialsId);
             }
-            return new StandardListBoxModel()
-                    .withEmptySelection()
-                    .withMatching(
-                            CredentialsMatchers.always(),
-                            CredentialsProvider.lookupCredentials(StringCredentials.class,
-                                    Jenkins.get(),
-                                    ACL.SYSTEM,
-                                    Collections.emptyList()));
+            return model
+                    .includeEmptyValue()
+                    .includeMatchingAs(
+                            ACL.SYSTEM2,
+                            Jenkins.get(),
+                            StringCredentials.class,
+                            Collections.emptyList(),
+                            CredentialsMatchers.always())
+                    .includeCurrentValue(nomadACLCredentialsId);
         }
     }
 
@@ -433,7 +438,7 @@ public class NomadCloud extends AbstractCloudImpl {
             String workerJob = nomad.startWorker(workerName, jnlpSecret, template);
             JSONObject workerJobJSON = new JSONObject(workerJob).getJSONObject("Job");
             String namespace = workerJobJSON.optString("Namespace");
-            if (!namespace.equals("")) {
+            if (!namespace.isEmpty()) {
                    worker.setNamespace(namespace);
             }
             worker.setRegion(workerJobJSON.optString("Region"));
