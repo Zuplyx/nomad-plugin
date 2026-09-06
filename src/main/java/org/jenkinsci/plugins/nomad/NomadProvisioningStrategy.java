@@ -21,11 +21,10 @@ import java.util.logging.Logger;
 import static java.util.logging.Logger.getLogger;
 
 /**
- * Only required for backward compatibility
- */
-@Deprecated
-/**
- * Idea picked from yet-another-docker-pluign @kostyasha
+ * Provisions Nomad workers as soon as a task becomes buildable, rather than waiting for the
+ * default {@link NodeProvisioner} strategy's load-averaging delay.
+ * <p>
+ * Idea picked from yet-another-docker-plugin @kostyasha
  *
  * @author antweiss
  */
@@ -58,8 +57,9 @@ public class NomadProvisioningStrategy extends NodeProvisioner.Strategy {
                 LOGGER.log(Level.FINE, "Available capacity=" + availableCapacity + " currentDemand=" + currentDemand);
 
                 if (availableCapacity < currentDemand) {
-                    Collection<PlannedNode> plannedNodes = nomadCloud.provision(label,
-                            currentDemand - availableCapacity);
+                    Collection<PlannedNode> plannedNodes = nomadCloud.provision(
+                        new Cloud.CloudState(label, strategyState.getAdditionalPlannedCapacity()),
+                        currentDemand - availableCapacity);
                     LOGGER.log(Level.FINE, "Planned " + plannedNodes.size() + " new nodes");
                     fireOnStarted(nomadCloud, strategyState.getLabel(), plannedNodes);
                     strategyState.recordPendingLaunches(plannedNodes);
@@ -74,10 +74,11 @@ public class NomadProvisioningStrategy extends NodeProvisioner.Strategy {
                 if (availableCapacity >= currentDemand) {
                     LOGGER.log(Level.FINE, "Provisioning completed");
                     return NodeProvisioner.StrategyDecision.PROVISIONING_COMPLETED;
-                } else {
-                    LOGGER.log(Level.FINE, "Provisioning not complete, consulting remaining strategies");
-                    return NodeProvisioner.StrategyDecision.CONSULT_REMAINING_STRATEGIES;
                 }
+                // Demand is not met yet. Fall through to the next Nomad cloud rather than
+                // giving up here, so a cloud that is out of capacity does not hide the rest.
+                LOGGER.log(Level.FINE, "Cloud {0} could not satisfy the demand, trying the next one",
+                        nomadCloud.name);
             }
         }
         LOGGER.log(Level.FINE, "Provisioning not complete, consulting remaining strategies");
