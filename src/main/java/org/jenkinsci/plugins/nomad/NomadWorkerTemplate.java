@@ -3,13 +3,13 @@ package org.jenkinsci.plugins.nomad;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
-import java.util.List;
+import java.io.InputStream;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
-import org.apache.commons.io.IOUtils;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
+import org.jenkinsci.Symbol;
+import org.jspecify.annotations.NonNull;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
@@ -19,8 +19,6 @@ import hudson.Extension;
 import hudson.Util;
 import hudson.model.Describable;
 import hudson.model.Descriptor;
-import hudson.model.Node;
-import hudson.model.labels.LabelAtom;
 import hudson.util.FormValidation;
 import hudson.util.Secret;
 import jenkins.model.Jenkins;
@@ -40,64 +38,6 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
     private final String labels;
     private final String jobTemplate;
     private final String remoteFs;
-
-    // legacy fields (we have to keep them for backward compatibility)
-    @Deprecated
-    private transient String region;
-    @Deprecated
-    private transient int cpu;
-    @Deprecated
-    private transient int memory;
-    @Deprecated
-    private transient int disk;
-    @Deprecated
-    private transient int priority;
-    @Deprecated
-    private transient List<? extends NomadConstraintTemplate> constraints;
-    @Deprecated
-    private transient Boolean useRawExec;
-    @Deprecated
-    private transient String image;
-    @Deprecated
-    private transient Boolean privileged;
-    @Deprecated
-    private transient String network;
-    @Deprecated
-    private transient String username;
-    @Deprecated
-    private transient Secret password;
-    @Deprecated
-    private transient String prefixCmd;
-    @Deprecated
-    private transient Boolean forcePull;
-    @Deprecated
-    private transient String hostVolumes;
-    @Deprecated
-    private transient String switchUser;
-    @Deprecated
-    private transient Node.Mode mode;
-    @Deprecated
-    private transient List<? extends NomadPortTemplate> ports;
-    @Deprecated
-    private transient String extraHosts;
-    @Deprecated
-    private transient String dnsServers;
-    @Deprecated
-    private transient String securityOpt;
-    @Deprecated
-    private transient String capAdd;
-    @Deprecated
-    private transient String capDrop;
-    @Deprecated
-    private transient String datacenters;
-    @Deprecated
-    private transient String vaultPolicies;
-    @Deprecated
-    private transient Set<LabelAtom> labelSet;
-    @Deprecated
-    private transient List<? extends NomadDevicePluginTemplate> devicePlugins;
-    @Deprecated
-    private transient String driver;
 
     @DataBoundConstructor
     public NomadWorkerTemplate(
@@ -179,12 +119,14 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
     }
 
     @Extension
+    @Symbol("nomadWorkerTemplate")
     public static final class DescriptorImpl extends Descriptor<NomadWorkerTemplate> {
         public static final String defaultJobTemplate = loadDefaultJobTemplate();
 
         private static String loadDefaultJobTemplate() {
-            try {
-                return IOUtils.toString(DescriptorImpl.class.getResource("/org/jenkinsci/plugins/nomad/jobTemplate.json"), UTF_8);
+            try (InputStream in = DescriptorImpl.class.getResourceAsStream(
+                    "/org/jenkinsci/plugins/nomad/jobTemplate.json")) {
+                return new String(Objects.requireNonNull(in, "jobTemplate.json is missing").readAllBytes(), UTF_8);
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             }
@@ -195,7 +137,7 @@ public class NomadWorkerTemplate implements Describable<NomadWorkerTemplate> {
         }
 
         @Override
-        public String getDisplayName() {
+        public @NonNull String getDisplayName() {
             return "";
         }
 

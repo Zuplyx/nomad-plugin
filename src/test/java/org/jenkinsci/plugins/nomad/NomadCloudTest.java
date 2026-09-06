@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import hudson.model.labels.LabelAtom;
+import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
@@ -41,7 +42,7 @@ class NomadCloudTest {
         NomadCloud cloud = createCloud(template);
 
         // WHEN
-        boolean result = cloud.canProvision(label);
+        boolean result = cloud.canProvision(cloudState(label));
 
         // THEN
         assertThat(result, is(true));
@@ -55,7 +56,7 @@ class NomadCloudTest {
         NomadCloud cloud = createCloud(template);
 
         // WHEN
-        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 3);
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(cloudState(label), 3);
 
         // THEN
         assertThat(result.size(), is(3));
@@ -132,7 +133,7 @@ class NomadCloudTest {
         cloud.setNomad(createNomadApi(new JobInfo[0]));
 
         // WHEN
-        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 10);
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(cloudState(label), 10);
 
         // THEN
         assertThat(result.size(), is(4));
@@ -153,7 +154,7 @@ class NomadCloudTest {
                 createJobInfo("dead"), createJobInfo("dead"), createJobInfo("running")}));
 
         // WHEN
-        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 10);
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(cloudState(label), 10);
 
         // THEN - only the running job counts, so 2 of the 3 slots are still free
         assertThat(result.size(), is(2));
@@ -174,7 +175,7 @@ class NomadCloudTest {
         cloud.setNomad(nomadApi);
 
         // WHEN
-        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(label, 5);
+        Collection<NodeProvisioner.PlannedNode> result = cloud.provision(cloudState(label), 5);
 
         // THEN - and Nomad is never asked to count jobs, since there is no limit to enforce
         assertThat(result.size(), is(5));
@@ -198,7 +199,7 @@ class NomadCloudTest {
         assertThat(cloud.isCheckCapacityBeforeProvisioning(), is(false));
 
         // WHEN
-        cloud.provision(label, 2);
+        cloud.provision(cloudState(label), 2);
 
         // THEN
         verify(nomadApi, never()).checkAllocAvailability(template);
@@ -227,6 +228,60 @@ class NomadCloudTest {
 
         // THEN
         assertThat(template.getMaxConcurrentJobs(), is(nullValue()));
+    }
+
+    /**
+     * 0.12.0 deletes MigrationHelper and the legacy template fields. A config.xml written by an
+     * older plugin still references those elements, so Jenkins must tolerate them rather than
+     * fail to load the cloud. XStream2's RobustReflectionConverter reports the unknown fields to
+     * the Old Data monitor and carries on; this pins that, because the alternative -- a
+     * controller that will not start -- is the one outcome this release must not produce.
+     */
+    @Test
+    void testCloudFromOlderPluginStillLoads() {
+        // GIVEN a cloud saved by an older plugin: legacy cloud fields, and a template carrying
+        // fields that no longer exist plus one referencing a class that has been deleted
+        String xml = """
+                <org.jenkinsci.plugins.nomad.NomadCloud>
+                  <name>nomad</name>
+                  <nomadUrl>http://nomad:4646</nomadUrl>
+                  <jenkinsUrl>http://jenkins:8080</jenkinsUrl>
+                  <jenkinsTunnel>jenkins:50000</jenkinsTunnel>
+                  <workerUrl>http://jenkins:8080/jnlpJars/slave.jar</workerUrl>
+                  <workerTimeout>5</workerTimeout>
+                  <templates>
+                    <org.jenkinsci.plugins.nomad.NomadWorkerTemplate>
+                      <prefix>jenkins</prefix>
+                      <labels>linux</labels>
+                      <idleTerminationInMinutes>10</idleTerminationInMinutes>
+                      <reusable>true</reusable>
+                      <numExecutors>1</numExecutors>
+                      <remoteFs></remoteFs>
+                      <jobTemplate>{}</jobTemplate>
+                      <cpu>500</cpu>
+                      <memory>256</memory>
+                      <image>jenkins/inbound-agent</image>
+                      <driver>docker</driver>
+                      <ports>
+                        <org.jenkinsci.plugins.nomad.NomadPortTemplate>
+                          <label>http</label><value>8080</value>
+                        </org.jenkinsci.plugins.nomad.NomadPortTemplate>
+                      </ports>
+                    </org.jenkinsci.plugins.nomad.NomadWorkerTemplate>
+                  </templates>
+                </org.jenkinsci.plugins.nomad.NomadCloud>
+                """;
+
+        // WHEN
+        NomadCloud cloud = (NomadCloud) Jenkins.XSTREAM2.fromXML(xml);
+
+        // THEN - it loads, and everything still supported survives
+        assertThat(cloud.getNomadUrl(), is("http://nomad:4646"));
+        assertThat(cloud.getTemplates().size(), is(1));
+        NomadWorkerTemplate template = cloud.getTemplates().get(0);
+        assertThat(template.getPrefix(), is("jenkins"));
+        assertThat(template.getLabels(), is("linux"));
+        assertThat(template.getJobTemplate(), is("{}"));
     }
 
     private NomadApi createNomadApi(JobInfo[] runningWorkers) {
@@ -263,6 +318,10 @@ class NomadCloudTest {
                 1,
                 null,
                 NomadWorkerTemplate.DescriptorImpl.defaultJobTemplate);
+    }
+
+    private Cloud.CloudState cloudState(LabelAtom label) {
+        return new Cloud.CloudState(label, 0);
     }
 
     private LabelAtom createLabel() {

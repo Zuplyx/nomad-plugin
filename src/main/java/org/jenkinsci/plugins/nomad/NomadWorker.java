@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jspecify.annotations.NonNull;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import hudson.Extension;
@@ -28,7 +29,8 @@ public class NomadWorker extends AbstractCloudSlave implements EphemeralNode {
     @DataBoundConstructor
     public NomadWorker(String name, String cloudName, String labelString, int numExecutors, int idleTerminationInMinutes,
             boolean reusable, String remoteFS) throws FormException, IOException {
-        super(name, remoteFS, new JNLPLauncher(false));
+        // JNLPLauncher() enables the agent work directory; JNLPLauncher(boolean) is deprecated.
+        super(name, remoteFS, new JNLPLauncher());
 
         setLabelString(labelString);
         setMode(labelString.isEmpty() ? Mode.NORMAL : Mode.EXCLUSIVE);
@@ -86,12 +88,12 @@ public class NomadWorker extends AbstractCloudSlave implements EphemeralNode {
         }
 
         @Override
-        public String getDisplayName() {
+        public @NonNull String getDisplayName() {
             return "Nomad Worker";
         }
 
         /**
-         * We only create these kinds of nodes programatically.
+         * We only create these kinds of nodes programmatically.
          */
         @Override
         public boolean isInstantiable() {
