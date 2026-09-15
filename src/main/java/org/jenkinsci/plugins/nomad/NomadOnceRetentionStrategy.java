@@ -21,6 +21,13 @@ public class NomadOnceRetentionStrategy extends CloudRetentionStrategy implement
 
     @Override
     public long check(AbstractCloudComputer c) {
+        // A worker that has never connected is still booting, not idle. Its boot is bounded by
+        // the cloud's worker timeout in NomadCloud.ProvisioningCallback, so leave it alone here;
+        // with a small idle timeout the check below would otherwise kill it mid-boot.
+        if (isStillBooting(c)) {
+            return 1;
+        }
+
         // Fallback: If the node is idle AND it has already executed a build, kill it.
         if (c.isIdle() && !c.getBuilds().isEmpty()) {
             LOGGER.log(Level.INFO, "Fallback: Single-use Nomad node {0} finished its build. Terminating.", c.getName());
@@ -28,9 +35,13 @@ public class NomadOnceRetentionStrategy extends CloudRetentionStrategy implement
             return 1;
         }
 
-        // Otherwise, it's either still running a job, OR it's a brand new node booting up.
+        // Otherwise, it's either still running a job, OR it's a brand-new node booting up.
         // Let the standard idle timeout handle the boot grace period.
         return super.check(c);
+    }
+
+    static boolean isStillBooting(AbstractCloudComputer<?> c) {
+        return c instanceof NomadComputer && !((NomadComputer) c).hasEverBeenOnline();
     }
 
     @Override

@@ -2,14 +2,19 @@ package org.jenkinsci.plugins.nomad;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 
+import static org.junit.Assert.assertThrows;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import hudson.model.Node;
 import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
 import jenkins.model.Jenkins;
@@ -22,6 +27,8 @@ import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 @WithJenkins
 class NomadCloudTest {
@@ -227,6 +234,48 @@ class NomadCloudTest {
 
         // THEN
         assertThat(template.getMaxConcurrentJobs(), is(nullValue()));
+    }
+
+    /**
+     * Provisioning waits for the agent to connect. If the node is removed in the meantime (a
+     * retention strategy, an admin), that wait must end immediately: the planned node stays counted
+     * as capacity until its future completes, so a wait that runs on to the full worker timeout
+     * stops the NodeProvisioner from replacing a worker that is already gone. Observed in
+     * production as "Provisioning completed" seven seconds after the worker was deregistered.
+     */
+    @Test
+    public void testPlannedNodeFailsFastWhenWorkerIsRemovedWhileBooting() throws Exception {
+        // GIVEN a cloud whose worker timeout (1 minute) is far longer than this test may wait
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        NomadCloud cloud = createCloud(template);
+        NomadApi nomadApi = createNomadApi(new JobInfo[0]);
+        when(nomadApi.startWorker(anyString(), anyString(), any()))
+                .thenReturn("{\"Job\": {\"Region\": \"global\"}}");
+        cloud.setNomad(nomadApi);
+
+        // WHEN a worker is provisioned and then removed before its agent connects
+        NodeProvisioner.PlannedNode planned = cloud.provision(label, 1).iterator().next();
+        Node node = waitForNode(planned.displayName);
+        r.jenkins.removeNode(node);
+
+        // THEN the planned node fails within seconds, not after the worker timeout
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> planned.future.get(15, TimeUnit.SECONDS));
+        assertThat(failure.getCause().getMessage(), containsString("removed"));
+        // and the worker is not deregistered a second time
+        verify(nomadApi, never()).stopWorker(anyString(), any(), any());
+    }
+
+    private Node waitForNode(String name) throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            Node node = r.jenkins.getNode(name);
+            if (node != null) {
+                return node;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("worker " + name + " was never added to Jenkins");
     }
 
     private NomadApi createNomadApi(JobInfo[] runningWorkers) {
