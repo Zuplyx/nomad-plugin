@@ -1,8 +1,12 @@
 package org.jenkinsci.plugins.nomad;
 
+import hudson.Extension;
+import hudson.model.Computer;
 import hudson.model.Executor;
 import hudson.model.Queue;
+import hudson.model.TaskListener;
 import hudson.slaves.AbstractCloudComputer;
+import hudson.slaves.ComputerListener;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -11,8 +15,35 @@ public class NomadComputer extends AbstractCloudComputer<NomadWorker> {
 
     private static final Logger LOGGER = Logger.getLogger(NomadComputer.class.getName());
 
+    /**
+     * Whether the agent has connected at least once. Until it has, the worker is still booting
+     * (pulling its image, starting the JVM, dialling in) and must not be reaped as "idle":
+     * {@link Computer#isIdle()} is true for a computer that has never connected, so an idle
+     * timeout would otherwise race the boot. That phase is bounded by the cloud's worker timeout
+     * instead, enforced by {@code NomadCloud.ProvisioningCallback}.
+     */
+    private volatile boolean everOnline;
+
     public NomadComputer(NomadWorker worker) {
         super(worker);
+    }
+
+    public boolean hasEverBeenOnline() {
+        return everOnline;
+    }
+
+    void markOnline() {
+        everOnline = true;
+    }
+
+    @Extension
+    public static final class OnlineTracker extends ComputerListener {
+        @Override
+        public void onOnline(Computer c, TaskListener listener) {
+            if (c instanceof NomadComputer) {
+                ((NomadComputer) c).markOnline();
+            }
+        }
     }
 
     @Override
@@ -26,7 +57,7 @@ public class NomadComputer extends AbstractCloudComputer<NomadWorker> {
 
     private boolean isReusable() {
         NomadWorker node = getNode();
-        return node == null ? false : node.isReusable();
+        return node != null && node.isReusable();
     }
 
     @Override
