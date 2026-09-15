@@ -5,7 +5,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -244,7 +244,7 @@ class NomadCloudTest {
      * production as "Provisioning completed" seven seconds after the worker was deregistered.
      */
     @Test
-    public void testPlannedNodeFailsFastWhenWorkerIsRemovedWhileBooting() throws Exception {
+    void testPlannedNodeFailsFastWhenWorkerIsRemovedWhileBooting() throws Exception {
         // GIVEN a cloud whose worker timeout (1 minute) is far longer than this test may wait
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());

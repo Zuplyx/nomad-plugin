@@ -12,10 +12,10 @@ import static org.mockito.Mockito.verify;
 
 import java.util.Collections;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
  * A freshly provisioned worker is offline until its agent dials in, and an offline computer counts
@@ -24,17 +24,17 @@ import org.jvnet.hudson.test.JenkinsRule;
  * The boot phase is bounded by the cloud's worker timeout instead, so the retention strategies must
  * not act on a worker that has never been online.
  */
-public class NomadRetentionStrategyTest {
+@WithJenkins
+class NomadRetentionStrategyTest {
 
     private static final String CLOUD = "nomad";
 
-    @Rule
-    public JenkinsRule j = new JenkinsRule();
-
+    private JenkinsRule j;
     private NomadApi nomadApi;
 
-    @Before
-    public void registerCloudWithMockedApi() {
+    @BeforeEach
+    void registerCloudWithMockedApi(JenkinsRule rule) {
+        j = rule;
         NomadCloud cloud = new NomadCloud(CLOUD, "http://nomad:4646", false, null, null, null, null,
                 5, "", false, Collections.emptyList());
         nomadApi = mock(NomadApi.class);
@@ -43,17 +43,17 @@ public class NomadRetentionStrategyTest {
     }
 
     @Test
-    public void bootingSingleUseWorkerIsNotTerminatedByZeroIdleTimeout() throws Exception {
+    void bootingSingleUseWorkerIsNotTerminatedByZeroIdleTimeout() throws Exception {
         assertBootingWorkerSurvivesCheck(false);
     }
 
     @Test
-    public void bootingReusableWorkerIsNotTerminatedByZeroIdleTimeout() throws Exception {
+    void bootingReusableWorkerIsNotTerminatedByZeroIdleTimeout() throws Exception {
         assertBootingWorkerSurvivesCheck(true);
     }
 
     @Test
-    public void connectedIdleWorkerIsStillTerminated() throws Exception {
+    void connectedIdleWorkerIsStillTerminated() throws Exception {
         // GIVEN a worker that HAS connected once and is now idle past a zero timeout
         NomadWorker worker = createWorker("connected-once", true);
         NomadComputer computer = (NomadComputer) worker.toComputer();
