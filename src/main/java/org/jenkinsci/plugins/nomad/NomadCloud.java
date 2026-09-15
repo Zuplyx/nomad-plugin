@@ -16,9 +16,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -38,6 +35,7 @@ import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.google.common.base.Strings;
 
 import hudson.Extension;
+import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Label;
 import hudson.model.Node;
@@ -440,34 +438,46 @@ public class NomadCloud extends AbstractCloudImpl {
             }
             worker.setRegion(workerJobJSON.optString("Region"));
 
-            // Check scheduling success
-            Callable<Boolean> callableTask = () -> {
-                try {
-                    LOGGER.log(Level.INFO, "Worker scheduled, waiting for connection");
-                    Objects.requireNonNull(worker.toComputer()).waitUntilOnline();
-                } catch (InterruptedException e) {
-                    LOGGER.log(Level.SEVERE, "Waiting for connection was interrupted");
-                    return false;
-                }
-                return true;
-            };
-
-            // Schedule a worker and wait for the computer to come online
-            ExecutorService executorService = Executors.newCachedThreadPool();
-            Future<Boolean> future = executorService.submit(callableTask);
-
+            // Wait for the agent to call back, bounded by workerTimeout.
+            long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(cloud.workerTimeout);
+            boolean online = false;
+            boolean removed = false;
             try {
-                future.get(cloud.workerTimeout, TimeUnit.MINUTES);
-                LOGGER.log(Level.INFO, "Connection established");
-            } catch (Exception ex) {
-                LOGGER.log(Level.SEVERE, "Worker computer did not come online within " + workerTimeout + " minutes, terminating worker" + worker);
-                worker.terminate();
-                throw new RuntimeException("Timed out waiting for agent to start up. Timeout: " + workerTimeout + " minutes.");
+                LOGGER.log(Level.INFO, "Worker scheduled, waiting for connection");
+                while (System.nanoTime() < deadline) {
+                    Computer computer = worker.toComputer();
+                    if (computer == null) {
+                        // toComputer() is null once the node has been removed from Jenkins.
+                        removed = true;
+                        break;
+                    }
+                    if (computer.isOnline()) {
+                        online = true;
+                        break;
+                    }
+                    TimeUnit.SECONDS.sleep(1);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOGGER.log(Level.SEVERE, "Waiting for connection was interrupted");
             } finally {
-                future.cancel(true);
-                executorService.shutdown();
                 pending -= template.getNumExecutors();
             }
+
+            if (removed) {
+                // Someone else already tore the worker down. Fail the planned node right away so
+                // the NodeProvisioner can plan a replacement, and do not deregister it twice.
+                LOGGER.log(Level.WARNING, "Worker " + workerName + " was removed before its agent connected");
+                throw new RuntimeException("Worker " + workerName + " was removed before its agent connected");
+            }
+            if (!online) {
+                LOGGER.log(Level.SEVERE, "Worker computer did not come online within " + workerTimeout
+                        + " minutes, terminating worker" + worker);
+                worker.terminate();
+                throw new RuntimeException("Timed out waiting for agent to start up. Timeout: "
+                        + workerTimeout + " minutes.");
+            }
+            LOGGER.log(Level.INFO, "Connection established");
             return worker;
         }
     }
