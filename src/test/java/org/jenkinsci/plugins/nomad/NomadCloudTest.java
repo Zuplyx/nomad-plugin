@@ -278,7 +278,7 @@ class NomadCloudTest {
      * workers that stayed listed as offline forever after their job was deregistered.
      */
     @Test
-    public void testCompletedPlannedNodeDoesNotResurrectATerminatedWorker() throws Exception {
+    void testCompletedPlannedNodeDoesNotResurrectATerminatedWorker() throws Exception {
         // GIVEN a worker whose agent has connected
         LabelAtom label = createLabel();
         NomadWorkerTemplate template = createTemplate(label.getName());
