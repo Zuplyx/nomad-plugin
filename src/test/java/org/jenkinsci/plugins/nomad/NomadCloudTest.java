@@ -3,6 +3,7 @@ package org.jenkinsci.plugins.nomad;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -265,6 +266,47 @@ class NomadCloudTest {
         assertThat(failure.getCause().getMessage(), containsString("removed"));
         // and the worker is not deregistered a second time
         verify(nomadApi, never()).stopWorker(anyString(), any(), any());
+    }
+
+    /**
+     * The plugin adds the worker node itself, before the agent connects, because an inbound agent
+     * can only connect to a node that already exists. NodeProvisioner does not know that: when the
+     * planned node's future completes it adds whatever node the future returned. That is a no-op
+     * while the same instance is still registered, but a single-use worker whose build finished
+     * within the provisioner's polling interval has already been terminated and removed by then,
+     * and the re-add resurrects it as a node with no Nomad job behind it. Observed in production as
+     * workers that stayed listed as offline forever after their job was deregistered.
+     */
+    @Test
+    public void testCompletedPlannedNodeDoesNotResurrectATerminatedWorker() throws Exception {
+        // GIVEN a worker whose agent has connected
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        NomadCloud cloud = createCloud(template);
+        NomadApi nomadApi = createNomadApi(new JobInfo[0]);
+        when(nomadApi.startWorker(anyString(), anyString(), any()))
+                .thenReturn("{\"Job\": {\"Region\": \"global\"}}");
+        cloud.setNomad(nomadApi);
+        r.jenkins.clouds.add(cloud);
+        NodeProvisioner.PlannedNode planned = cloud.provision(label, 1).iterator().next();
+        NomadWorker worker = (NomadWorker) waitForNode(planned.displayName);
+        // Swap the inbound launcher for one the test can drive, and make the computer pick it up
+        worker.setLauncher(r.createComputerLauncher(null));
+        r.jenkins.setNodes(r.jenkins.getNodes());
+        r.waitOnline(worker);
+        Node provisioned = planned.future.get(15, TimeUnit.SECONDS);
+        assertThat(r.jenkins.getNode(worker.getNodeName()), is(notNullValue()));
+
+        // WHEN the worker is terminated before NodeProvisioner gets round to the completed future
+        worker.terminate();
+        assertThat(r.jenkins.getNode(worker.getNodeName()), is(nullValue()));
+        // and NodeProvisioner.update() then does what it does with a completed future
+        if (provisioned != null) {
+            r.jenkins.addNode(provisioned);
+        }
+
+        // THEN the worker stays gone
+        assertThat(r.jenkins.getNode(worker.getNodeName()), is(nullValue()));
     }
 
     private Node waitForNode(String name) throws InterruptedException {

@@ -478,7 +478,14 @@ public class NomadCloud extends AbstractCloudImpl {
                         + workerTimeout + " minutes.");
             }
             LOGGER.log(Level.INFO, "Connection established");
-            return worker;
+            // The worker was added to Jenkins above, before the agent connected, because an inbound
+            // agent can only connect to a node that already exists. NodeProvisioner adds whatever
+            // node this future returns, on its next tick after the future completes. Returning the
+            // worker would be a no-op while it is still registered, but a single-use worker whose
+            // build finished within that tick has already been terminated and removed, and the
+            // re-add would resurrect it as a node with no Nomad job behind it. There is nothing
+            // left for NodeProvisioner to add, so we return null
+            return null;
         }
     }
 }
