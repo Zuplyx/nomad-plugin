@@ -1,0 +1,12 @@
+<div>
+    Deregister Nomad jobs that no longer have a Jenkins agent, for example because the
+    controller was restarted while workers were running.<br/>
+    <br/>
+    Only jobs whose ID looks like one this plugin generates are considered, and only after the
+    <i>Worker Startup Timeout</i> has passed, so a worker that is still booting is left alone.<br/>
+    <br/>
+    <b>Give each controller its own worker template prefix</b> if several Jenkins controllers
+    share one Nomad cluster. Ownership is decided by the job ID, which starts with the template's
+    <i>Job Prefix</i>: two controllers using the same prefix will each see the other's workers as
+    orphans and deregister them, interrupting running builds.
+</div>

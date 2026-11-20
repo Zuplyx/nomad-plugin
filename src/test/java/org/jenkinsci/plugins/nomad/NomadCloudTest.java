@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,11 +21,15 @@ import hudson.model.labels.LabelAtom;
 import hudson.slaves.NodeProvisioner;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
+import org.jenkinsci.plugins.nomad.Api.JobSummary;
+import org.json.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
@@ -309,6 +314,125 @@ class NomadCloudTest {
         assertThat(r.jenkins.getNode(worker.getNodeName()), is(nullValue()));
     }
 
+    /**
+     * The node is registered before the agent connects, because an inbound agent can only connect
+     * to a node that already exists. Nothing else reaps a worker that has never been online -- both
+     * retention strategies skip one while it is still booting -- so a failure between registering
+     * the node and waiting for the agent used to leave an offline node that no code path could
+     * remove, once per provisioning round. A malformed Nomad URL is enough to trigger it.
+     */
+    @Test
+    void testProvisioningFailureDoesNotLeaveAnUnreapableNode() throws Exception {
+        // GIVEN registering the Nomad job fails
+        LabelAtom label = createLabel();
+        NomadWorkerTemplate template = createTemplate(label.getName());
+        NomadCloud cloud = createCloud(template, false);
+        NomadApi nomadApi = createNomadApi(new JobInfo[0]);
+        when(nomadApi.startWorker(anyString(), anyString(), any()))
+                .thenThrow(new RuntimeException("Unable to parse Nomad url"));
+        cloud.setNomad(nomadApi);
+        r.jenkins.clouds.add(cloud);
+
+        // WHEN
+        NodeProvisioner.PlannedNode planned = cloud.provision(label, 1).iterator().next();
+
+        // THEN the planned node fails and the worker is torn down, not left behind
+        assertThrows(ExecutionException.class, () -> planned.future.get(15, TimeUnit.SECONDS));
+        assertThat(r.jenkins.getNode(planned.displayName), is(nullValue()));
+        verify(nomadApi).stopWorker(eq(planned.displayName), any(), any());
+    }
+
+    @Test
+    void testPruneDeregistersAnExpiredOrphanedWorker() {
+        // GIVEN a running Nomad job with no Jenkins node, submitted longer ago than the timeout
+        LabelAtom label = createLabel();
+        NomadApi nomadApi = pruningApi(orphan("jenkins-dead1"), 5);
+        NomadCloud cloud = pruningCloud(nomadApi, label);
+
+        // WHEN only pruning runs: an excess workload of 0 provisions nothing
+        cloud.provision(label, 0);
+
+        // THEN
+        verify(nomadApi).stopWorker("jenkins-dead1", "ns1", "global");
+    }
+
+    @Test
+    void testPruneLeavesAWorkerThatIsStillStartingUp() {
+        // GIVEN the same job, submitted just now: it may still be booting
+        LabelAtom label = createLabel();
+        NomadApi nomadApi = pruningApi(orphan("jenkins-booting1"), 0);
+        NomadCloud cloud = pruningCloud(nomadApi, label);
+
+        // WHEN
+        cloud.provision(label, 0);
+
+        // THEN
+        verify(nomadApi, never()).stopWorker(anyString(), any(), any());
+    }
+
+    /**
+     * Jobs are listed by name prefix across every namespace, so the listing also returns jobs this
+     * controller never created: another controller's workers, or any job whose ID merely starts
+     * with the prefix. Deregistering one of those interrupts someone else's build, and an ID is
+     * also allowed to contain characters that would rewrite the request path.
+     */
+    @Test
+    void testPruneIgnoresJobsItDidNotCreate() {
+        // GIVEN jobs that share the prefix but cannot have come from this template
+        LabelAtom label = createLabel();
+        NomadApi nomadApi = pruningApi(orphan("jenkins"), 5);
+        when(nomadApi.getRunningWorkers(anyString())).thenReturn(new JobInfo[]{
+                orphan("jenkins"),                        // the job that runs Jenkins itself
+                orphan("jenkins-worker-of-other-ci"),     // another controller's naming scheme
+                orphan("jenkins-a/../../v1/nodes"),       // would rewrite the request path
+        });
+        NomadCloud cloud = pruningCloud(nomadApi, label);
+
+        // WHEN
+        cloud.provision(label, 0);
+
+        // THEN
+        verify(nomadApi, never()).stopWorker(anyString(), any(), any());
+    }
+
+    /**
+     * Jenkins removes the node whatever _terminate does, so a cloud that has been renamed or
+     * deleted must not throw: the Nomad job would be left running with nothing left to stop it, and
+     * the operator would see no reason why.
+     */
+    @Test
+    void testTerminatingAWorkerWhoseCloudIsGoneRemovesTheNode() throws Exception {
+        // GIVEN a worker whose cloud does not exist
+        NomadWorker worker = new NomadWorker("orphan-worker", "renamed-away", "label", 1, 1, true, "/tmp");
+        r.jenkins.addNode(worker);
+
+        // WHEN
+        worker.terminate();
+
+        // THEN
+        assertThat(r.jenkins.getNode("orphan-worker"), is(nullValue()));
+    }
+
+    private JobInfo orphan(String jobId) {
+        return new JobInfo(jobId, jobId, "batch", "running", 50, new JobSummary(jobId, "ns1"));
+    }
+
+    private NomadApi pruningApi(JobInfo orphan, int submittedMinutesAgo) {
+        NomadApi nomadApi = createNomadApi(new JobInfo[]{orphan});
+        long submitTimeNanos = Instant.now().minus(submittedMinutesAgo, ChronoUnit.MINUTES)
+                .toEpochMilli() * 1_000_000L;
+        when(nomadApi.getRunningWorker(anyString(), any())).thenReturn(
+                new JSONObject().put("Region", "global").put("SubmitTime", submitTimeNanos));
+        return nomadApi;
+    }
+
+    private NomadCloud pruningCloud(NomadApi nomadApi, LabelAtom label) {
+        // workerTimeout is 1 minute, so a job submitted 5 minutes ago is past its startup window
+        NomadCloud cloud = createCloud(createTemplate(label.getName()), true);
+        cloud.setNomad(nomadApi);
+        return cloud;
+    }
+
     private Node waitForNode(String name) throws InterruptedException {
         for (int i = 0; i < 100; i++) {
             Node node = r.jenkins.getNode(name);
@@ -331,6 +455,10 @@ class NomadCloudTest {
     }
 
     private NomadCloud createCloud(NomadWorkerTemplate template) {
+        return createCloud(template, false);
+    }
+
+    private NomadCloud createCloud(NomadWorkerTemplate template, boolean prune) {
         return new NomadCloud(
                 "nomad",
                 "nomadUrl",
@@ -341,7 +469,7 @@ class NomadCloudTest {
                 null,
                 1,
                 "",
-                false,
+                prune,
                 Collections.singletonList(template));
     }
 
