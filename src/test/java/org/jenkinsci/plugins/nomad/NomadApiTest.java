@@ -312,6 +312,60 @@ public class NomadApiTest {
         assertThat(jobs.length, is(0));
     }
 
+    /**
+     * Gson turns an empty document into null, and a failed request yields an empty body, so the
+     * callers that iterate this array used to throw a NullPointerException whenever Nomad was
+     * unreachable. That throw escaped Cloud.provision and, because NodeProvisioner does not catch
+     * it per label, stopped provisioning for every other cloud in the same round.
+     */
+    @Test
+    void testGetJobsIsEmptyWhenTheRequestFails() {
+        // GIVEN Nomad answers with an error and no body
+        stubFor(get(urlMatching("/v1/jobs\\?prefix=jenkins&namespace=\\*"))
+                .willReturn(serverError()));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+
+        // WHEN
+        JobInfo[] jobs = api.getRunningWorkers("jenkins");
+
+        // THEN
+        assertThat(jobs.length, is(0));
+    }
+
+    @Test
+    void testGetJobsIsEmptyWhenTheResponseIsNotJson() {
+        // GIVEN something between Jenkins and Nomad answers with an error page
+        stubFor(get(urlMatching("/v1/jobs\\?prefix=jenkins&namespace=\\*"))
+                .willReturn(ok("<html>502 Bad Gateway</html>")));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+
+        // WHEN
+        JobInfo[] jobs = api.getRunningWorkers("jenkins");
+
+        // THEN
+        assertThat(jobs.length, is(0));
+    }
+
+    /**
+     * Nomad only forbids spaces and NUL in a job ID, so an ID read back from the API may contain
+     * '/', '..' or '?'. Concatenated into the request path those rewrite the request: the plugin
+     * would delete a different resource, in a namespace of the ID author's choosing, with the
+     * controller's token.
+     */
+    @Test
+    void testStopWorkerCannotBeRedirectedByTheJobId() {
+        // GIVEN
+        stubFor(delete(urlMatching("/v1/job/.*")).willReturn(ok()));
+        when(cloud.getNomadUrl()).thenReturn(wireMockRule.baseUrl());
+
+        // WHEN
+        api.stopWorker("jenkins-a/../../v1/nodes?namespace=prod", "jenkins-ns", "global");
+
+        // THEN the ID stays a single path segment and our namespace is the only one sent
+        verify(deleteRequestedFor(urlEqualTo(
+                "/v1/job/jenkins-a%2F..%2F..%2Fv1%2Fnodes%3Fnamespace=prod?namespace=jenkins-ns")));
+    }
+
     @Test
     void testACLTokenIsPresent() {
         // GIVEN

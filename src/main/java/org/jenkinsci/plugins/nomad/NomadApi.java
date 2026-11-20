@@ -3,6 +3,7 @@ package org.jenkinsci.plugins.nomad;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
 
 import org.jenkinsci.plugins.nomad.Api.JobInfo;
 import org.json.JSONArray;
@@ -150,8 +151,6 @@ public final class NomadApi {
                 template
         );
 
-        LOGGER.log(Level.FINE, workerJob);
-
         Request request = createRequestBuilder("/v1/jobs", null)
                 .put(RequestBody.create(workerJob, JSON))
                 .build();
@@ -174,7 +173,7 @@ public final class NomadApi {
         if (region != null && !region.equals("global"))
             params.put("region", region);
 
-        Request request = createRequestBuilder("/v1/job/" + workerName, params)
+        Request request = createRequestBuilder("/v1/job", workerName, params)
                 .delete()
                 .build();
 
@@ -196,7 +195,14 @@ public final class NomadApi {
                 .get()
                 .build();
         String body = checkResponseAndGetBody(request);
-        return new Gson().fromJson(body, JobInfo[].class);
+        try {
+            JobInfo[] jobs = new Gson().fromJson(body, JobInfo[].class);
+            // Gson returns null for an empty document, which is what a failed request yields.
+            return jobs != null ? jobs : new JobInfo[0];
+        } catch (JsonSyntaxException e) {
+            LOGGER.log(Level.WARNING, "Could not read the Nomad job list: " + e.getMessage());
+            return new JobInfo[0];
+        }
     }
 
     /**
@@ -209,7 +215,7 @@ public final class NomadApi {
         Map<String,String> params = new HashMap<>();
         if (namespace != null)
             params.put("namespace", namespace);
-        Request request = createRequestBuilder("/v1/job/" + jobID, params)
+        Request request = createRequestBuilder("/v1/job", jobID, params)
                 .get()
                 .build();
         String body = checkResponseAndGetBody(request);
@@ -234,7 +240,10 @@ public final class NomadApi {
                 .replace("%WORKER_SECRET%", secret)
                 .replace("%WORKER_DIR%", template.getRemoteFs());
 
-        LOGGER.log(Level.FINE, String.format("job:%n%s", job));
+        // The rendered job carries the agent's connect secret in its environment, and a log at this
+        // level is the first thing enabled when provisioning misbehaves.
+        LOGGER.log(Level.FINE, () -> String.format("job:%n%s",
+                secret.isEmpty() ? job : job.replace(secret, "<redacted>")));
         return job;
     }
 
@@ -337,6 +346,20 @@ public final class NomadApi {
      * @param path Relative path to a Nomad resource (e.g. /v1/agent/self)
      */
     private Request.Builder createRequestBuilder(String path, Map<String,String> params) {
+        return createRequestBuilder(path, null, params);
+    }
+
+    /**
+     * Provides a new request builder with a fresh Nomad token (if necessary).
+     * @param path Relative path to a Nomad resource (e.g. /v1/agent/self)
+     * @param jobId Nomad job ID, appended as a single percent-encoded path segment, or null.
+     *              Nomad only forbids spaces and NUL in a job ID, so an ID may contain '/', '..'
+     *              or '?'. Concatenated into the path those would rewrite the request: an ID of
+     *              {@code x/../../v1/nodes} resolves to a different endpoint, and one containing
+     *              {@code ?namespace=} injects a query parameter that Nomad reads in preference to
+     *              ours. The IDs listed back from Nomad are not under our control.
+     */
+    private Request.Builder createRequestBuilder(String path, String jobId, Map<String,String> params) {
         Request.Builder builder = new Request.Builder();
         String nomadUrl = cloud.getNomadUrl();
         if (nomadUrl == null || path == null)
@@ -345,6 +368,9 @@ public final class NomadApi {
         if (httpUrl == null)
             throw new RuntimeException("Unable to parse Nomad url");
         HttpUrl.Builder httpBuilder = httpUrl.newBuilder();
+        if (jobId != null) {
+            httpBuilder.addPathSegment(jobId);
+        }
         if (params != null) {
            for(Map.Entry<String, String> param : params.entrySet()) {
                httpBuilder.addQueryParameter(param.getKey(),param.getValue());
