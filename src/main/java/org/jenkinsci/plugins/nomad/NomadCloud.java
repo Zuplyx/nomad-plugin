@@ -226,7 +226,15 @@ public class NomadCloud extends AbstractCloudImpl {
         JobInfo[] nomadWorkers = this.nomad.getRunningWorkers(template.getPrefix());
 
         for (JobInfo worker : nomadWorkers) {
-            if (worker.getStatus().equalsIgnoreCase("running")) {
+            if (!template.isOwnWorkerName(worker.getID())) {
+                // The listing is by name prefix across every namespace, so it also returns jobs
+                // this controller never created. Deleting one of those would stop someone else's
+                // build.
+                LOGGER.log(Level.FINE, "Ignoring job {0}: not named like a worker of this template",
+                        worker.getID());
+                continue;
+            }
+            if ("running".equalsIgnoreCase(worker.getStatus())) {
                 LOGGER.log(Level.FINE, "Found worker: " + worker.getName() + " - " + worker.getID());
                 Node node = Jenkins.get().getNode(worker.getName());
 
@@ -426,6 +434,25 @@ public class NomadCloud extends AbstractCloudImpl {
             );
             Jenkins.get().addNode(worker);
 
+            // Everything from here on runs with the node already registered. Nothing else reaps a
+            // worker that has never been online -- both retention strategies deliberately skip one
+            // while it is still booting -- so any failure here must tear it down, or it stays as an
+            // offline node forever. See the catch below.
+            try {
+                return startAndWaitForAgent(worker);
+            } catch (Exception e) {
+                if (worker.toComputer() != null) {
+                    LOGGER.log(Level.WARNING, "Provisioning worker " + workerName
+                            + " failed; terminating it", e);
+                    worker.terminate();
+                }
+                throw e;
+            } finally {
+                pending -= template.getNumExecutors();
+            }
+        }
+
+        private Node startAndWaitForAgent(NomadWorker worker) throws Exception {
             String jnlpSecret = JnlpAgentReceiver.SLAVE_SECRET.mac(workerName);
 
             LOGGER.log(Level.INFO, "Asking Nomad to schedule new Jenkins worker");
@@ -460,8 +487,6 @@ public class NomadCloud extends AbstractCloudImpl {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 LOGGER.log(Level.SEVERE, "Waiting for connection was interrupted");
-            } finally {
-                pending -= template.getNumExecutors();
             }
 
             if (removed) {
@@ -471,9 +496,7 @@ public class NomadCloud extends AbstractCloudImpl {
                 throw new RuntimeException("Worker " + workerName + " was removed before its agent connected");
             }
             if (!online) {
-                LOGGER.log(Level.SEVERE, "Worker computer did not come online within " + workerTimeout
-                        + " minutes, terminating worker" + worker);
-                worker.terminate();
+                // The caller terminates the worker.
                 throw new RuntimeException("Timed out waiting for agent to start up. Timeout: "
                         + workerTimeout + " minutes.");
             }

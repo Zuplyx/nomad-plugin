@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 import hudson.Extension;
@@ -12,6 +13,7 @@ import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.slaves.AbstractCloudComputer;
 import hudson.slaves.AbstractCloudSlave;
+import hudson.slaves.Cloud;
 import hudson.slaves.EphemeralNode;
 import hudson.slaves.JNLPLauncher;
 import jenkins.model.Jenkins;
@@ -58,13 +60,26 @@ public class NomadWorker extends AbstractCloudSlave implements EphemeralNode {
 
     @Override
     protected void _terminate(TaskListener listener) {
+        NomadCloud cloud = getCloud();
+        if (cloud == null) {
+            // Jenkins removes the node regardless of what happens here, so the Nomad job would be
+            // left running with nothing left to deregister it.
+            LOGGER.log(Level.WARNING, "Cloud '" + cloudName + "' no longer exists, so worker '" + getNodeName()
+                    + "' cannot be deregistered. Stop it manually: nomad job stop -purge " + getNodeName());
+            return;
+        }
         LOGGER.log(Level.INFO, "Asking Nomad to deregister worker '" + getNodeName() + "' in namespace '" + getNamespace() +
                 "' in region '" + getRegion() + "'");
-        getCloud().nomad().stopWorker(getNodeName(), getNamespace(), getRegion());
+        cloud.nomad().stopWorker(getNodeName(), getNamespace(), getRegion());
     }
 
+    /**
+     * @return the cloud that provisioned this worker, or null if it has been renamed or deleted
+     */
+    @CheckForNull
     public NomadCloud getCloud() {
-        return (NomadCloud) Jenkins.get().getCloud(cloudName);
+        Cloud cloud = Jenkins.get().getCloud(cloudName);
+        return cloud instanceof NomadCloud ? (NomadCloud) cloud : null;
     }
 
     public String getCloudName() {
